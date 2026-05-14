@@ -252,6 +252,30 @@ master: agrega status pelo thread
   `MMB_TAB=master` (ou core/etc) no início de cada sessão via
   `up.sh`.
 
+## Diário de bordo compartilhado (v0.2+)
+
+Além de mensagens entre agentes, o andaime mantém **journal
+estruturado de eventos** que merecem retrospectiva:
+
+- `.tooling/logs/journal.jsonl` — append-only, schema v1.
+- `.tooling/bin/log.sh` — helper único:
+  ```bash
+  log.sh <sev> <event> "<msg>" [--epic X] [--task Y] [--resolves <id>]
+  ```
+- `.tooling/bin/review-cycle.sh <epic-slug>` — agrega + propõe
+  fortificações ao fim de cada épico. Master apresenta pro
+  Rick, **Rick decide** (anti-overengineering).
+
+**Relação log ↔ msg:**
+- `msg.sh` é canal **operacional** (alguém precisa agir agora).
+- `log.sh` é canal **de aprendizado** (registra pra agregação
+  retrospectiva).
+- Erros importantes vão nos dois: `msg.sh master error` pra
+  desbloquear + `log.sh error` pra review-cycle ver depois.
+
+**Severidades:** `warn` | `error` | `critical`. Eventos `info`
+ficam fora — journal é pra coisas que mereceriam fortificação.
+
 ## Agent registry e supervision (v0.1+)
 
 Além do canal de mensagens, o andaime mantém **registro vivo

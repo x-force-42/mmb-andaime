@@ -70,6 +70,15 @@ isso é mitigado.
    durante thinking (observado no smoke test do v0). Profile
    master.md instrui explicitamente.
 
+### M6 — Fechar épico sem rodar review-cycle (v0.2+)
+
+❌ Marcar épico como ✅ sem agregar o diário de bordo.
+✅ Ao fechar épico, rode `review-cycle.sh <slug>` e apresenta
+   o relatório pro Rick. Apenas com consentimento dele, gerar
+   briefings de fortificação a partir de eventos não resolvidos.
+🛡️ Perder a janela de aprendizado do épico é desperdício de
+   sinal. Anti-overengineering exige Rick no loop.
+
 ## Orq Local
 
 ### L1 — Conversar direto com Rick
@@ -144,6 +153,14 @@ isso é mitigado.
 🛡️ Default threshold é `MMB_HEARTBEAT_TIMEOUT=600` (10 min).
    Configurável em `config.sh` ou via env.
 
+### L13 — Erro de fluxo só em prosa, não estruturado (v0.2+)
+
+❌ `msg.sh master error` com texto livre sem entrada no journal.
+✅ Sempre que mandar `error` pro mestre, também rode:
+   `log.sh error <event-slug> "<msg>" --epic <slug> --task <id>`.
+🛡️ Sem o journal, `review-cycle.sh` ao fechar o épico não
+   enxerga o erro — perde-se sinal pra evolução do andaime.
+
 ## Atômico
 
 ### A1 — Sair do escopo "Dentro" do brief
@@ -208,6 +225,16 @@ isso é mitigado.
 🛡️ Sem heartbeat, supervision tick do orq vai te declarar
    zumbi após `MMB_HEARTBEAT_TIMEOUT` e abortar a task —
    trabalho perdido.
+
+### A7 — Sair sem entregar sem registrar no journal (v0.2+)
+
+❌ Pré-flight falhou / hook quebrou / decisão em aberto → sair
+   silenciosamente (atômico não tem `msg.sh`, mas tem `log.sh`).
+✅ Antes de sair: `log.sh critical <event-slug> "<motivo>"
+   --epic <slug> --task <id>`. Orq local diagnostica
+   imediatamente via `review-cycle` ou `journal.jsonl`.
+🛡️ Atômico sem voz = causa-raiz mascarada. log.sh é seu único
+   canal de saída estruturada.
 
 ## Concorrência
 

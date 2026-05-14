@@ -112,6 +112,20 @@ spawn-atomic.sh mmb-core 1.1 retornou erro: ...
 EOF
 ```
 
+**Erro de fluxo também vai pro diário de bordo (v0.2+):**
+
+Além de `msg.sh master error`, registre no journal pra que o
+master agregue ao fechar o épico via `review-cycle.sh`:
+
+```bash
+/MMB/.tooling/bin/log.sh error <event-slug> "<msg curta>" \
+  --epic <thread> --task <task-id>
+```
+
+Use `event-slug` curto e reusável (ex: `spawn-failed`,
+`gh-issue-create-rejected`, `check-deps-mismatch`). Eventos
+repetidos cross-épico viram candidatos a guardrail. Guardrail L13.
+
 Convenções:
 - `thread` = o slug do épico (ex: `cleanup-scripts`).
 - Body pode ser stdin (`-`) ou arquivo.

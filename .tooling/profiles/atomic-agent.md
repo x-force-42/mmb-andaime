@@ -117,6 +117,25 @@ Sem heartbeat, o orq de projeto vai te declarar zumbi após
 `MMB_HEARTBEAT_TIMEOUT` (default 600s) e abortar a task.
 Trabalho perdido. Guardrail A6.
 
+## Erro crítico vai pro diário de bordo (v0.2+)
+
+Você **não tem `msg.sh`** (canal proibido). Mas tem `log.sh`
+pra registrar erro crítico antes de sair sem entregar:
+
+```bash
+/MMB/.tooling/bin/log.sh critical <event-slug> "<motivo>" \
+  --epic <epic-slug> --task <task-id>
+```
+
+Use quando:
+- Pré-flight falhou (você está em main, working tree suja, etc).
+- Hook quebrou e não dá pra consertar dentro do escopo.
+- Push rejeitado (proteção de branch, dep inexistente).
+- Brief tem "decisão em aberto" — log + saída.
+
+Sem isso, o orq local descobre só pelo timeout do heartbeat —
+diagnóstico fica cego. Guardrail A7.
+
 ## Fluxo de trabalho
 
 Após pré-flight verde + brief lido:

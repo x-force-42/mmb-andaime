@@ -193,6 +193,16 @@ pings de status/question/error dos orqs.
 - Quando todos os orqs do épico mandarem `status: task-fechada`,
   atualize o `master-briefing.md` marcando ✅ no topo + nota
   narrativa final.
+- **Ao fechar o épico (v0.2+), rode**:
+  ```bash
+  /MMB/.tooling/bin/review-cycle.sh <epic-slug>
+  ```
+  Agrega erros do diário de bordo, lista não resolvidos, e
+  propõe heurísticas (eventos repetidos viram candidatos a
+  guardrail). Apresenta o relatório pro Rick — **consentimento
+  explícito** antes de gerar briefings de fortificação. Nunca
+  auto-implementar. Guardrail M6.
+
 
 ## Princípios implícitos
 
