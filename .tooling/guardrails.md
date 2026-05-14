@@ -60,6 +60,16 @@ isso é mitigado.
 🛡️ Anti-padrão atualizado pós-teste de fogo (v2 rejeitava
    single-repo; v3 dispatcha mas Mestre nunca executa).
 
+### M5 — Pular polling do inbox no início do turn (v0.1+)
+
+❌ Começar turn agindo direto sem checar mensagens frias.
+✅ Primeira ação de cada turn:
+   `ls -1t .tooling/inbox/master/ | grep -v '^\.'`. Processa
+   o que aparecer, depois prossegue.
+🛡️ Polling-on-every-turn fecha o gap de pings perdidos
+   durante thinking (observado no smoke test do v0). Profile
+   master.md instrui explicitamente.
+
 ## Orq Local
 
 ### L1 — Conversar direto com Rick
@@ -116,6 +126,24 @@ isso é mitigado.
    `msg.sh master error task-abortada-<id> ...`.
 🛡️ Script `task-abort.sh` existe especificamente pra isso.
 
+### L8 — Pular polling do inbox no início do turn (v0.1+)
+
+❌ Aguardar passivamente ping sem checar mensagens frias.
+✅ Primeira ação de cada turn:
+   `ls -1t .tooling/inbox/<seu-id>/ | grep -v '^\.'`. Mesma
+   regra do master.
+🛡️ Polling cobre pings perdidos + sessão recém-iniciada
+   pegando mensagens acumuladas.
+
+### L12 — Esquecer supervision tick (v0.1+)
+
+❌ Spawnar atômico e nunca mais checar se ele está vivo.
+✅ Em turnos ociosos (ou ao receber status do mestre), rodar:
+   `.tooling/bin/agents.sh check-children <seu-id>`. Se
+   reportar STUCK, `task-abort.sh` + `msg.sh master error`.
+🛡️ Default threshold é `MMB_HEARTBEAT_TIMEOUT=600` (10 min).
+   Configurável em `config.sh` ou via env.
+
 ## Atômico
 
 ### A1 — Sair do escopo "Dentro" do brief
@@ -170,6 +198,16 @@ isso é mitigado.
 ✅ **Você não tem canal.** Toda comunicação é via PR body
    e commits.
 🛡️ Profile: "Você não tem canal" + lista no anti-padrão.
+
+### A6 — Esquecer heartbeat antes de cada commit (v0.1+)
+
+❌ Trabalhar várias horas sem chamar `agents.sh heartbeat`.
+✅ Antes de cada commit (ou no mínimo a cada 5 min de trabalho):
+   `.tooling/bin/agents.sh heartbeat $MMB_AGENT_ID`. É 1
+   linha de bash, sem overhead.
+🛡️ Sem heartbeat, supervision tick do orq vai te declarar
+   zumbi após `MMB_HEARTBEAT_TIMEOUT` e abortar a task —
+   trabalho perdido.
 
 ## Concorrência
 

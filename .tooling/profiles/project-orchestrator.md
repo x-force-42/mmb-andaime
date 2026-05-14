@@ -54,6 +54,26 @@ fala só com o Mestre (e os atômicos que você spawna).
 > (sem o prefixo `mmb-`). Já o repo path completo é `mmb-core`,
 > `mmb-cockpit`, `mmb-aquarium`.
 
+## Polling-on-every-turn + supervision tick (v0.1+)
+
+**Antes de qualquer outra ação a cada turn**, faça 2 coisas:
+
+```bash
+# 1. Polling do inbox (mensagens cold + ping perdido)
+ls -1t /MMB/.tooling/inbox/$MMB_TAB/ | grep -v '^\.'
+
+# 2. Supervision tick (filhos zumbi?)
+/MMB/.tooling/bin/agents.sh check-children $MMB_AGENT_ID
+```
+
+Se a supervision tick reportar `STUCK: <agent-id>`, é seu
+dever:
+1. `task-abort.sh <seu-repo> <task-id>` — limpa worktree.
+2. `msg.sh master error task-abortada-<task-id>` — avisa
+   mestre com diagnóstico.
+
+Guardrails L8 (polling) e L12 (supervision) proíbem pular.
+
 ## Como ler mensagens
 
 Quando aparecer no seu prompt uma linha começando com `MSG `:

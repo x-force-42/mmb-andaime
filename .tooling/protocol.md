@@ -80,6 +80,48 @@ created: <ISO8601 UTC>
 | `answer` | master | orq local | Resposta a uma `question` |
 | `status` | orq local | master | Marco: issue criada / PR aberto / PR mergeado / task fechada |
 | `error` | qualquer | master | Algo quebrou: spawn falhou, push rejeitado, etc |
+| `propose` | filho | parent | "sugiro estender escopo / mudar abordagem" (v0.1+) |
+| `accept-proposal` | parent | filho | "aceito a proposta, prossiga" (v0.1+) |
+| `reject-proposal` | parent | filho | "rejeito; mantém escopo original" (v0.1+) |
+| `cancel` | parent | filho | "abandone a task atual" (v0.1+) |
+
+### Mapeamento informal → FIPA-ACL (v0.1+)
+
+Pra observabilidade futura e alinhamento com literatura
+de multi-agent systems, as performativas atuais mapeiam pra
+FIPA-ACL assim:
+
+| Nosso  | FIPA-ACL | Speech act |
+|---|---|---|
+| `briefing`         | `request`         | "execute X" |
+| `question`         | `query-if` / `query-ref` | "decida X" |
+| `answer`           | `inform-ref`      | "X = Y" |
+| `status`           | `inform`          | "informo que Y aconteceu" |
+| `error`            | `failure`         | "falhei em X porque Z" |
+| `propose`          | `propose`         | proposta |
+| `accept-proposal`  | `accept-proposal` | aceitação |
+| `reject-proposal`  | `reject-proposal` | rejeição |
+| `cancel`           | `cancel`          | cancelamento |
+
+## Polling-on-every-turn é a garantia de entrega (v0.1+)
+
+**Ping é otimização de latência, não fonte da verdade.**
+Toda sessão Claude (master, orq, atômico) **lê o próprio inbox
+no início de cada turn**, independente de ter recebido ping
+ou não. Razão: `tmux send-keys` pode falhar (sessão em
+"thinking", input bufferizado sem submit). Polling fecha o gap.
+
+Operacional:
+```bash
+# No início de cada turn, antes de qualquer ação:
+ls -1t .tooling/inbox/$MMB_TAB/ | grep -v '^\.'
+```
+
+Arquivos prefixados com `.` (ex: `.lock`) são infra do
+protocolo, não mensagens — polling deve ignorar.
+
+Profiles instruem cada papel a fazer esse polling. Guardrails
+M5/L8/A6 proíbem pular.
 
 ## O ping
 
@@ -106,7 +148,9 @@ seguida de `inbox: <path>`, leia o arquivo e aja conforme o
 Único ponto de envio. Centraliza:
 - Validação de campos (`to`, `type`).
 - Detecção do remetente (via env `MMB_TAB` ou nome da tab tmux).
-- Escrita atômica do arquivo.
+- Escrita atômica do arquivo, **serializada por `flock(1)`**
+  (v0.1+) — múltiplos remetentes concorrentes ao mesmo inbox
+  não corrompem nada.
 - Envio do ping pra tab correta (window 0, sempre — orq local
   mora ali; atômicos vivem em panes >0 e não recebem mensagens).
 
@@ -194,17 +238,49 @@ master: agrega status pelo thread
 - Visibilidade: Rick vê os pings em todas as tabs.
 
 **Limitações conhecidas:**
-- **Sem ACK:** quem envia não sabe se quem recebeu processou.
-  Mitigação: receptor envia `status` em marcos importantes.
-- **Sem retry:** se o ping não for visto (Claude crashou no
-  momento exato), mensagem fica no inbox aguardando o próximo
-  start da sessão ler.
+- **Sem ACK obrigatório:** quem envia não sabe se quem recebeu
+  processou. Mitigação primária: polling-on-every-turn cobre
+  o caso "ping perdido"; receptor envia `status` em marcos.
+- **Sem retry automático:** mensagens ficam no inbox até serem
+  lidas pelo polling do receptor. Pings que não chegaram
+  (Claude em thinking, sessão crashada) viram entrega
+  garantida no próximo turn.
 - **Sem queue size limit:** inbox pode acumular. Cleanup
   manual ou via script futuro.
 - **`MMB_TAB` env não está garantido:** detecção via nome de
   window pode falhar se você renomear as tabs. Solução: setar
   `MMB_TAB=master` (ou core/etc) no início de cada sessão via
   `up.sh`.
+
+## Agent registry e supervision (v0.1+)
+
+Além do canal de mensagens, o andaime mantém **registro vivo
+de agentes**:
+
+- `.tooling/state/agents.jsonl` — log append-only de eventos
+  `spawn`/`deregister`. Estado atual = redução do log.
+- `.tooling/state/heartbeats/<agent-id>.alive` — touch file,
+  mtime indica "vivo recente". Atômicos chamam `agents.sh
+  heartbeat` antes de cada commit; orqs chamam no início de
+  cada turn ocioso.
+- `.tooling/bin/agents.sh` — helper único:
+  - `agents.sh register <id> <parent> <pane> [task] [epic]`
+  - `agents.sh deregister <id> <reason>`
+  - `agents.sh heartbeat <id>`
+  - `agents.sh list [--all]`
+  - `agents.sh status <id>`
+  - `agents.sh check-children <parent> [--threshold N]`
+
+**Convenções de agent-id:**
+- Orq mestre: `master`
+- Orq de projeto: `core` / `cockpit` / `aquarium`
+- Atômico: `<repo-short>-<task-id>` (ex: `core-X1`)
+
+**Supervision tick:** orq local roda `agents.sh check-children
+<seu-id>` periodicamente (ver profile do orq). Filhos com
+heartbeat > `MMB_HEARTBEAT_TIMEOUT` (default 600s) são
+considerados zumbis → `task-abort.sh` automático + `error`
+pro mestre.
 
 ## Evolução pra MCP (Model Context Protocol)
 

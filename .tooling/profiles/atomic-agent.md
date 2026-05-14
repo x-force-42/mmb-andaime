@@ -103,6 +103,20 @@ falhou em filtrar. **Pare e saia sem agir.** Não chute, não
 escale (você não tem canal). Sua saída sem PR é o sinal pro
 orq local notar e refazer.
 
+## Heartbeat (v0.1+)
+
+Você foi registrado no agent registry pelo `spawn-atomic.sh`.
+Antes de cada commit (ou no mínimo a cada 5 min de trabalho
+contínuo), pingue:
+
+```bash
+/MMB/.tooling/bin/agents.sh heartbeat $MMB_AGENT_ID
+```
+
+Sem heartbeat, o orq de projeto vai te declarar zumbi após
+`MMB_HEARTBEAT_TIMEOUT` (default 600s) e abortar a task.
+Trabalho perdido. Guardrail A6.
+
 ## Fluxo de trabalho
 
 Após pré-flight verde + brief lido:
@@ -111,8 +125,9 @@ Após pré-flight verde + brief lido:
    (`type(scope): subject`).
 2. **Rode testes locais** antes de cada commit (`pytest`,
    `npm run test:unit`, etc, conforme o repo).
-3. **Não mergeie** em main/master.
-4. **Quando terminar**, abra PR:
+3. **Heartbeat** antes do commit: `agents.sh heartbeat $MMB_AGENT_ID`.
+4. **Não mergeie** em main/master.
+5. **Quando terminar**, abra PR:
    ```bash
    /MMB/.tooling/bin/open-pr.sh
    ```
@@ -124,7 +139,7 @@ Após pré-flight verde + brief lido:
    - Comenta na sub-issue avisando do PR.
    - Se está em pane tmux: agenda `kill-pane` em 8s.
 
-5. **Reporte curto** ao fim — vai aparecer nos seus últimos
+6. **Reporte curto** ao fim — vai aparecer nos seus últimos
    8s antes do pane fechar. Formato:
    - O que foi feito.
    - O que ficou aberto (deveria ser nada).

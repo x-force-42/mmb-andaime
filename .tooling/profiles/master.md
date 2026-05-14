@@ -65,6 +65,20 @@ com ninguém (executam e morrem).
 └── mmb-{core,cockpit,aquarium}/                 ← repos (read-only pra você)
 ```
 
+## Polling-on-every-turn (v0.1+)
+
+**Antes de qualquer outra ação a cada turn**, liste seu inbox:
+
+```bash
+ls -1t /MMB/.tooling/inbox/master/ | grep -v '^\.'
+```
+
+Processa o que aparecer. Ping via `MSG ` é otimização; polling
+é a garantia de entrega. Arquivos prefixados com `.` (ex:
+`.lock`) são infra do protocolo — ignore.
+
+Guardrail M5 proíbe pular essa etapa.
+
 ## Como ler mensagens
 
 Quando você vê no seu prompt uma linha começando com `MSG `:
