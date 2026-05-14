@@ -127,18 +127,29 @@ TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 FILENAME="${TS}_${FROM}_${TYPE}_${SUBJECT}.md"
 TARGET="$INBOX_DIR/$FILENAME"
 
-{
-  echo "---"
-  echo "from: $FROM"
-  echo "to: $TO"
-  echo "type: $TYPE"
-  echo "subject: $SUBJECT"
-  [ -n "$THREAD" ] && echo "thread: $THREAD"
-  echo "created: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "---"
-  echo
-  echo "$BODY_CONTENT"
-} > "$TARGET"
+# Lock por inbox de destino. Serializa writes concorrentes (múltiplos
+# remetentes paralelos) sem bloquear leitores. Lock file começa com
+# "." pra ficar invisível ao polling (que ignora arquivos ocultos).
+LOCK="$INBOX_DIR/.lock"
+(
+  flock --timeout 5 9 || {
+    echo "ERRO: timeout adquirindo lock em $LOCK" >&2
+    echo "       Algum outro msg.sh travou? Verifique processos." >&2
+    exit 11
+  }
+  {
+    echo "---"
+    echo "from: $FROM"
+    echo "to: $TO"
+    echo "type: $TYPE"
+    echo "subject: $SUBJECT"
+    [ -n "$THREAD" ] && echo "thread: $THREAD"
+    echo "created: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "---"
+    echo
+    echo "$BODY_CONTENT"
+  } > "$TARGET"
+) 9>>"$LOCK"
 
 echo "✓ Mensagem gravada: $TARGET"
 

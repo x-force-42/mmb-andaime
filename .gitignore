@@ -19,5 +19,13 @@
 /.tooling/logs/*
 !/.tooling/logs/.gitkeep
 
+# Estado runtime do andaime (registry de agentes, heartbeats).
+# Estrutura preservada via .gitkeep; conteúdo é runtime.
+/.tooling/state/*
+!/.tooling/state/.gitkeep
+!/.tooling/state/heartbeats/
+/.tooling/state/heartbeats/*
+!/.tooling/state/heartbeats/.gitkeep
+
 # Worktrees efêmeras que possam surgir na raiz
 /.worktrees/

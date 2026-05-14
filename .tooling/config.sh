@@ -49,6 +49,15 @@
 : "${MMB_TMUX_SESSION:=mmb}"
 : "${MMB_TMUX_SPLIT:=-v}"
 
+# ─── Supervision ─────────────────────────────────────────────────
+# Threshold (segundos) sem heartbeat antes do orq considerar um
+# filho zumbi. Configurável via env: MMB_HEARTBEAT_TIMEOUT=300 ...
+#
+# 10 min é margem larga: atômico em "baking" pesado pode levar 2-3
+# min entre turns. Ajustar baixo se polling de orq é muito frequente.
+
+: "${MMB_HEARTBEAT_TIMEOUT:=600}"
+
 # ─── Helpers ─────────────────────────────────────────────────────
 # Monta a string de flags pra passar pro `claude` CLI de uma
 # camada específica. Uso interno dos scripts.
