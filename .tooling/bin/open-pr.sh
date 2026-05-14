@@ -122,6 +122,12 @@ fi
 echo
 echo "Agente Atômico terminou."
 
+# Deregistra no agent registry (v0.1). MMB_AGENT_ID é setado pelo
+# spawn-atomic.sh; se ausente, segue sem deregister.
+if [ -n "${MMB_AGENT_ID:-}" ]; then
+  "$TOOLING_DIR/bin/agents.sh" deregister "$MMB_AGENT_ID" "pr-opened" || true
+fi
+
 # Auto-fechamento do pane: se estamos num pane tmux, mata em 8s
 # pra dar tempo de Rick ver a URL do PR. Roda em background pra
 # não bloquear o retorno do script.

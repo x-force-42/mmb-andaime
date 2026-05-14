@@ -107,21 +107,36 @@ WORKTREE="$REPO_PATH/.worktrees/$SLUG"
 
 ATOMIC_FLAGS=$(mmb_claude_flags atomic)
 
-PROMPT="Você é um Agente Atômico. Leia /MMB/.tooling/profiles/atomic-agent.md antes de qualquer coisa. Sua tarefa: $TASK_ID (slug: $SLUG, repo: $REPO). Sua sub-issue é #$ISSUE em $MMB_GH_OWNER/$REPO — leia via: gh issue view $ISSUE --repo $MMB_GH_OWNER/$REPO. O body da issue é o prompt completo da sua execução. Quando terminar, abra PR via /MMB/.tooling/bin/open-pr.sh e encerre (o pane fecha sozinho)."
+# Agent ID do atômico: <repo-short>-<task-id> (ex: core-X1).
+# Necessário pro registry de agentes (v0.1) e pro heartbeat.
+REPO_SHORT="${REPO#mmb-}"
+AGENT_ID="${REPO_SHORT}-${TASK_ID}"
+PARENT_AGENT="$REPO_SHORT"
+
+PROMPT="Você é um Agente Atômico (id: $AGENT_ID). Leia /MMB/.tooling/profiles/atomic-agent.md antes de qualquer coisa. Sua tarefa: $TASK_ID (slug: $SLUG, repo: $REPO). Sua sub-issue é #$ISSUE em $MMB_GH_OWNER/$REPO — leia via: gh issue view $ISSUE --repo $MMB_GH_OWNER/$REPO. O body da issue é o prompt completo da sua execução. Antes de cada commit, rode: /MMB/.tooling/bin/agents.sh heartbeat $AGENT_ID. Quando terminar, abra PR via /MMB/.tooling/bin/open-pr.sh e encerre (o pane fecha sozinho)."
 
 # Spawn no tmux
 if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; then
-  short="${REPO#mmb-}"
+  short="$REPO_SHORT"
 
   WINDOW_ID=$(tmux list-windows -t "$MMB_TMUX_SESSION" -F '#{window_index}:#{window_name}' \
     | grep ":$short\$" | head -1 | cut -d: -f1 || true)
+
+  # Helper local: exporta MMB_TAB + MMB_AGENT_ID antes do claude
+  _send_atomic_init() {
+    local pane="$1"
+    tmux send-keys -t "$pane" "export MMB_TAB=$short MMB_AGENT_ID=$AGENT_ID" C-m
+    tmux send-keys -t "$pane" "claude $ATOMIC_FLAGS \"$PROMPT\"" C-m
+  }
 
   if [ -z "$WINDOW_ID" ]; then
     echo "AVISO: window '$short' não encontrada na sessão tmux '$MMB_TMUX_SESSION'."
     echo "Fallback: criando nova window."
     tmux new-window -t "$MMB_TMUX_SESSION" -n "atomic-$TASK_ID" -c "$WORKTREE"
-    tmux send-keys -t "$MMB_TMUX_SESSION:atomic-$TASK_ID" "claude $ATOMIC_FLAGS \"$PROMPT\"" C-m
-    echo "✓ Atômico spawnado em nova window 'atomic-$TASK_ID'"
+    _send_atomic_init "$MMB_TMUX_SESSION:atomic-$TASK_ID"
+    "$TOOLING_DIR/bin/agents.sh" register \
+      "$AGENT_ID" "$PARENT_AGENT" "$MMB_TMUX_SESSION:atomic-$TASK_ID" "$TASK_ID"
+    echo "✓ Atômico spawnado em nova window 'atomic-$TASK_ID' (id: $AGENT_ID)"
     exit 0
   fi
 
@@ -138,9 +153,15 @@ if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; th
       ;;
   esac
 
-  tmux send-keys -t "$MMB_TMUX_SESSION:$WINDOW_ID" "claude $ATOMIC_FLAGS \"$PROMPT\"" C-m
+  # Captura o pane recém-criado (último pane da window).
+  NEW_PANE=$(tmux list-panes -t "$MMB_TMUX_SESSION:$WINDOW_ID" \
+    -F '#{pane_id}:#{pane_index}' | tail -1 | cut -d: -f1)
+  _send_atomic_init "$MMB_TMUX_SESSION:$WINDOW_ID"
 
-  echo "✓ Atômico spawnado como split na window '$short' (tab $WINDOW_ID)"
+  "$TOOLING_DIR/bin/agents.sh" register \
+    "$AGENT_ID" "$PARENT_AGENT" "${NEW_PANE:-$MMB_TMUX_SESSION:$WINDOW_ID}" "$TASK_ID"
+
+  echo "✓ Atômico spawnado como split na window '$short' (tab $WINDOW_ID, pane $NEW_PANE, id: $AGENT_ID)"
   echo "  Issue: #$ISSUE  Worktree: $WORKTREE"
   exit 0
 fi

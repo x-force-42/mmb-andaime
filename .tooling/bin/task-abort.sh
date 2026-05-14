@@ -76,4 +76,12 @@ if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
 fi
 
 git worktree prune
+
+# Deregistra atômico se houver (v0.1). agent-id = <repo-short>-<task-id>.
+REPO_SHORT="${REPO#mmb-}"
+AGENT_ID="${REPO_SHORT}-${TASK_ID}"
+if [ -f "$TOOLING_DIR/state/heartbeats/$AGENT_ID.alive" ]; then
+  "$TOOLING_DIR/bin/agents.sh" deregister "$AGENT_ID" "aborted" || true
+fi
+
 echo "✓ [$REPO] Aborto concluído pra task $TASK_ID."
