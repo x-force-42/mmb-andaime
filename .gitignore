@@ -1,0 +1,23 @@
+# Repos dos projetos (vivem como submódulos lógicos, não físicos)
+/mmb-core/
+/mmb-cockpit/
+/mmb-aquarium/
+
+# Settings locais do Claude Code (por máquina)
+/.claude/
+
+# Mensagens da mailbox — audit trail efêmero, não esqueleto.
+# Estrutura dos dirs preservada via .gitkeep.
+/.tooling/inbox/*/*
+!/.tooling/inbox/*/.gitkeep
+
+# Épicos em curso — log de execução, não esqueleto.
+/.tooling/intents/*
+!/.tooling/intents/.gitkeep
+
+# Logs estruturados (quando virarem realidade).
+/.tooling/logs/*
+!/.tooling/logs/.gitkeep
+
+# Worktrees efêmeras que possam surgir na raiz
+/.worktrees/
