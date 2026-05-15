@@ -238,6 +238,17 @@ phase_messaging() {
       else
         echo "  [dry-run] mv inbox/$d/*.md → archive"
       fi
+      # Lifecycle subdirs (v0.3+): .processing/.done/.dead/. .dead/ é
+      # postmortem — preservado no archive, sempre.
+      for sub in .processing .done .dead; do
+        run "mkdir -p '$ARCHIVE/inbox/$d/$sub'"
+        if [ "$DRY_RUN" -eq 0 ]; then
+          find "$tooling/inbox/$d/$sub" -maxdepth 1 -name '*.md' \
+            -exec mv {} "$ARCHIVE/inbox/$d/$sub/" \; 2>/dev/null || true
+        else
+          echo "  [dry-run] mv inbox/$d/$sub/*.md → archive"
+        fi
+      done
     done
     if [ "$DRY_RUN" -eq 0 ]; then
       [ -d "$tooling/intents" ] && find "$tooling/intents" -maxdepth 1 -mindepth 1 \
@@ -265,6 +276,9 @@ phase_messaging() {
     # delete direto
     for d in master core cockpit aquarium; do
       run "find '$tooling/inbox/$d' -maxdepth 1 -name '*.md' -delete"
+      for sub in .processing .done .dead; do
+        run "find '$tooling/inbox/$d/$sub' -maxdepth 1 -name '*.md' -delete 2>/dev/null || true"
+      done
     done
     run "find '$tooling/intents' -maxdepth 1 -mindepth 1 -not -name '.gitkeep' -exec rm -rf {} +"
     run ": > '$tooling/state/agents.jsonl'"
@@ -310,7 +324,8 @@ phase_verify() {
   done
   for d in master core cockpit aquarium; do
     local n
-    n=$(find "$MMB_ROOT/.tooling/inbox/$d" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l)
+    # Conta top-level + lifecycle subdirs (.processing/.done/.dead)
+    n=$(find "$MMB_ROOT/.tooling/inbox/$d" -maxdepth 2 -name '*.md' 2>/dev/null | wc -l)
     [ "$n" -ne 0 ] && { ok=0; echo "  ⚠ inbox/$d: $n msg files"; } || echo "  ✓ inbox/$d limpo"
   done
   [ "$ok" -eq 1 ] && echo "  ✓ reset OK" || { echo "  ⚠ reset com pendências"; return 1; }
