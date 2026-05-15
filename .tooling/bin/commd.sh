@@ -38,9 +38,14 @@ JOURNAL_LOCK="$LOG_DIR/.journal.lock"
 mkdir -p "$STATE_DIR" "$LOG_DIR/workers"
 [ -f "$JOURNAL_LOG" ] || : > "$JOURNAL_LOG"
 
-# Cria inboxes idempotente
+# Cria inboxes + subdirs de lifecycle idempotente. Subdirs começam
+# com "." para não competir com .lock/.gitkeep no top-level e para
+# que find -name '.*' não as confunda com mensagens.
 for d in master core cockpit aquarium; do
-  mkdir -p "$INBOX_BASE/$d"
+  mkdir -p "$INBOX_BASE/$d" \
+           "$INBOX_BASE/$d/.processing" \
+           "$INBOX_BASE/$d/.done" \
+           "$INBOX_BASE/$d/.dead"
 done
 
 log() {
@@ -137,14 +142,36 @@ dispatch() {
   local lock="$STATE_DIR/worker-${dest}.lock"
   (
     flock 9
+
+    # Claim: move pra .processing/ DENTRO do lock — assim duas mensagens
+    # pro mesmo dest enfileiram corretamente, e crash entre dispatch e
+    # fim do worker deixa o arquivo identificável em .processing/.
+    # Se o arquivo já estiver lá (drain após crash), pula a mv.
+    working_file="$file"
+    if [[ "$file" != "$INBOX_BASE/$dest/.processing/"* ]]; then
+      working_file="$INBOX_BASE/$dest/.processing/$basename"
+      if ! mv "$file" "$working_file" 2>/dev/null; then
+        log "claim FAILED dest=$dest file=$basename (source missing?)"
+        exit 0
+      fi
+      journal commd-claim "$dest" "$basename"
+    fi
+
     rc=0
-    "$TOOLING_DIR/bin/worker.sh" "$dest" "$file" || rc=$?
+    "$TOOLING_DIR/bin/worker.sh" "$dest" "$working_file" || rc=$?
+
     if [ "$rc" -eq 0 ]; then
+      mv "$working_file" "$INBOX_BASE/$dest/.done/$basename" 2>/dev/null || true
+      journal commd-done "$dest" "$basename"
       journal commd-worker-done "$dest" "$basename"
     elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+      mv "$working_file" "$INBOX_BASE/$dest/.dead/$basename" 2>/dev/null || true
+      journal commd-dead "$dest" "$basename"
       journal commd-worker-timeout "$dest" "$basename" "timeout_seconds=$MMB_WORKER_TIMEOUT"
       log "worker TIMEOUT (rc=$rc) dest=$dest file=$basename"
     else
+      mv "$working_file" "$INBOX_BASE/$dest/.dead/$basename" 2>/dev/null || true
+      journal commd-dead "$dest" "$basename"
       journal commd-worker-exit "$dest" "$basename" "exit_code=$rc"
       log "worker exit-code=$rc dest=$dest file=$basename"
     fi
@@ -183,13 +210,25 @@ run_foreground() {
   log "================================================================"
 
   # Drain inicial: processa mensagens que estavam no inbox antes do
-  # daemon subir (sessão crashou, mensagem cold, etc).
+  # daemon subir. Duas fontes, nesta ordem:
+  #   1) inbox/<dest>/.processing/* — claims órfãos de crash anterior.
+  #   2) inbox/<dest>/*              — mensagens cruas nunca dispatchadas.
+  # Listagem explícita por subdir (não depende do filtro -name '.*' p/
+  # excluir os subdirs de lifecycle), maxdepth=1 em cada.
   log "drain inicial..."
   local count=0
-  while IFS= read -r f; do
-    dispatch "$f"
-    count=$((count + 1))
-  done < <(find "$INBOX_BASE" -type f -not -name '.*' 2>/dev/null | sort)
+  for d in master core cockpit aquarium; do
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      dispatch "$f"
+      count=$((count + 1))
+    done < <(find "$INBOX_BASE/$d/.processing" -maxdepth 1 -type f 2>/dev/null | sort)
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      dispatch "$f"
+      count=$((count + 1))
+    done < <(find "$INBOX_BASE/$d" -maxdepth 1 -type f 2>/dev/null | sort)
+  done
   log "drain: $count mensagem(ns) re-dispatchadas"
 
   # Loop principal: novo arquivo → dispatch.
