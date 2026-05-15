@@ -67,7 +67,10 @@ Tudo no meio rola via mensagens entre sessões.
 │   ├── task-abort.sh               ← cleanup pré-merge (descarta)
 │   ├── spawn-atomic.sh             ← task-start + tmux split-pane + claude
 │   ├── open-pr.sh                  ← push + gh pr create + kill-pane
-│   └── check-deps.sh               ← verifica PRs de deps via gh
+│   ├── check-deps.sh               ← verifica PRs de deps via gh
+│   └── reset-all.sh                ← reset total do andaime (fecha PRs/issues,
+│                                     limpa worktrees/branches, archive da
+│                                     mensageria). Invocado pela skill mmb-reset.
 ├── inbox/                          ← mailbox por destinatário
 │   ├── master/                     ← Mestre recebe aqui
 │   ├── core/
