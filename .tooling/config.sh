@@ -123,6 +123,21 @@ unset _mmb_default_model _mmb_default_effort
 
 : "${MMB_WORKER_TIMEOUT:=${MMB_WORKER_TIMEOUT_DEFAULT:-1200}}"
 
+# ─── Commd poll (safety net pro inotifywait) ─────────────────────
+# Intervalo (segundos) entre passadas de reconciliação periódica do
+# commd.sh. inotifywait é melhor-esforço no WSL2: sob burst pode
+# perder eventos e mensagens ficam órfãs no top-level do inbox. O
+# poll varre os inboxes a cada N segundos e re-dispatcha o que
+# achar. A claim atômica via mv-no-flock garante idempotência.
+#
+# 0 desabilita o safety net (preserva comportamento pré-v0.4 do
+# commd: só inotify). Útil pra repro de bugs ou ambiente Linux puro
+# onde inotify é confiável.
+#
+# Override por sessão: MMB_COMMD_POLL_INTERVAL=10 .tooling/bin/commd.sh fg
+
+: "${MMB_COMMD_POLL_INTERVAL:=30}"
+
 # ─── Helpers ─────────────────────────────────────────────────────
 # Monta a string de flags pra passar pro `claude` CLI de uma
 # camada específica. Uso interno dos scripts.

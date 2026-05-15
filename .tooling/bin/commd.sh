@@ -184,6 +184,25 @@ dispatch() {
   ) 9>>"$lock" &
 }
 
+# Reconciliação periódica: safety net pra eventos de inotify perdidos
+# (WSL2 sob burst). Varre apenas top-level dos 4 inboxes — nunca toca
+# .processing/, .done/, .dead/ por causa do -maxdepth 1. Mensagens
+# encontradas são re-dispatchadas; a claim atômica via mv-no-flock
+# dentro de `dispatch` garante idempotência se inotify e poll baterem
+# no mesmo arquivo.
+reconcile_once() {
+  local d f basename
+  for d in master core cockpit aquarium; do
+    while IFS= read -r -d '' f; do
+      basename=$(basename "$f")
+      case "$basename" in .*) continue ;; esac
+      log "poll: orphan recovered dest=$d file=$basename"
+      journal commd-poll-recovered "$d" "$basename"
+      dispatch "$f"
+    done < <(find "$INBOX_BASE/$d" -maxdepth 1 -type f -print0 2>/dev/null)
+  done
+}
+
 run_foreground() {
   # Pré-checks
   if ! command -v inotifywait >/dev/null 2>&1; then
@@ -254,8 +273,40 @@ run_foreground() {
   # Loop principal: novo arquivo → dispatch.
   # -m: monitor (loop infinito); -e: eventos; --format '%w%f': path completo
   # Lê uma linha por evento.
-  while IFS= read -r path; do
-    dispatch "$path"
+  #
+  # Safety net: se MMB_COMMD_POLL_INTERVAL>0, usa `read -t` pra alternar
+  # entre receber eventos do inotify e rodar reconcile_once a cada
+  # intervalo. Em WSL2 sob burst, inotify perde eventos — o poll varre
+  # top-level dos inboxes pra recuperar órfãos. Se =0, mantém
+  # comportamento antigo (read bloqueante, só inotify).
+  local poll_interval="${MMB_COMMD_POLL_INTERVAL:-30}"
+  if [ "$poll_interval" -gt 0 ]; then
+    log "poll: reconciliação periódica a cada ${poll_interval}s"
+  else
+    log "poll: desabilitado (MMB_COMMD_POLL_INTERVAL=0)"
+  fi
+
+  local path="" rc=0
+  while :; do
+    if [ "$poll_interval" -gt 0 ]; then
+      rc=0
+      IFS= read -r -t "$poll_interval" path || rc=$?
+    else
+      rc=0
+      IFS= read -r path || rc=$?
+    fi
+
+    if [ "$rc" -eq 0 ]; then
+      [ -n "$path" ] && dispatch "$path"
+    elif [ "$rc" -gt 128 ]; then
+      # Timeout do read -t → safety net.
+      reconcile_once
+    else
+      # EOF: pipe do inotifywait fechou (processo morreu / SIGPIPE).
+      log "inotifywait pipe fechou (rc=$rc); reconciliação final e saída"
+      reconcile_once
+      break
+    fi
   done < <(
     inotifywait -m -q \
       -e create,moved_to \
