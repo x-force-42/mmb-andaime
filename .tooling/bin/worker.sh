@@ -147,20 +147,29 @@ EOF
 } >> "$LOG"
 
 # Dispara claude -p. Output append no log. cwd via subshell.
+# Envelopado em `timeout`: claude pendurado segura o flock do dest no
+# commd e bloqueia todas as próximas mensagens. SIGTERM com grace de
+# 30s, depois SIGKILL. Exit 124 (TERM bem-sucedido) ou 137 (após KILL)
+# significam timeout — logamos diferente pro bridge/jq classificar.
 (
   cd "$CWD"
   # MMB_TAB pra que msg.sh (se chamado de dentro) saiba o remetente
   export MMB_TAB="$DEST"
   export MMB_AGENT_ID="$DEST-$$"
   # shellcheck disable=SC2086
-  claude -p "$USER_PROMPT" \
-    $CLAUDE_FLAGS \
-    --append-system-prompt "$APPEND_PROMPT" \
-    --output-format text \
-    2>&1
+  timeout --signal=TERM --kill-after=30s "${MMB_WORKER_TIMEOUT}s" \
+    claude -p "$USER_PROMPT" \
+      $CLAUDE_FLAGS \
+      --append-system-prompt "$APPEND_PROMPT" \
+      --output-format text \
+      2>&1
 ) >> "$LOG" || {
   EXIT=$?
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] worker $DEST EXIT=$EXIT" >> "$LOG"
+  if [ "$EXIT" = "124" ] || [ "$EXIT" = "137" ]; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] worker $DEST TIMEOUT after ${MMB_WORKER_TIMEOUT}s" >> "$LOG"
+  else
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] worker $DEST EXIT=$EXIT" >> "$LOG"
+  fi
   exit $EXIT
 }
 

@@ -26,6 +26,7 @@ case "$MMB_MODE" in
     _mmb_default_model="claude-haiku-4-5-20251001"
     _mmb_default_effort="low"
     : "${MMB_HEARTBEAT_TIMEOUT_DEFAULT:=60}"
+    : "${MMB_WORKER_TIMEOUT_DEFAULT:=120}"
     ;;
   balanced)
     # Trabalho real. Master pesado (decisão cross-repo), workers/atomic
@@ -35,12 +36,14 @@ case "$MMB_MODE" in
     _mmb_default_model="claude-sonnet-4-6"
     _mmb_default_effort="high"
     : "${MMB_HEARTBEAT_TIMEOUT_DEFAULT:=600}"
+    : "${MMB_WORKER_TIMEOUT_DEFAULT:=1200}"
     ;;
   normal)
     # Produção tradicional. Opus em todas as camadas. Qualidade > tudo.
     _mmb_default_model="claude-opus-4-7"
     _mmb_default_effort="high"
     : "${MMB_HEARTBEAT_TIMEOUT_DEFAULT:=600}"
+    : "${MMB_WORKER_TIMEOUT_DEFAULT:=1200}"
     ;;
   *)
     echo "config.sh: MMB_MODE inválido '$MMB_MODE' (use normal|fast|balanced)" >&2
@@ -108,6 +111,17 @@ unset _mmb_default_model _mmb_default_effort
 # MMB_MODE — sobrescritível.
 
 : "${MMB_HEARTBEAT_TIMEOUT:=${MMB_HEARTBEAT_TIMEOUT_DEFAULT:-600}}"
+
+# ─── Worker timeout ──────────────────────────────────────────────
+# Limite duro (segundos) para a chamada `claude -p` em worker.sh.
+# Sem isso, um worker pendurado segura o flock do destinatário pra
+# sempre, bloqueando todas as próximas mensagens daquele dest.
+#
+# Defaults derivam de MMB_MODE (igual MMB_HEARTBEAT_TIMEOUT):
+#   fast=120s | balanced=1200s | normal=1200s.
+# Override por sessão: MMB_WORKER_TIMEOUT=60 ...
+
+: "${MMB_WORKER_TIMEOUT:=${MMB_WORKER_TIMEOUT_DEFAULT:-1200}}"
 
 # ─── Helpers ─────────────────────────────────────────────────────
 # Monta a string de flags pra passar pro `claude` CLI de uma
