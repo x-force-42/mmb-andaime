@@ -7,21 +7,52 @@
 # Override pontual: `MMB_MODEL_ATOMIC=claude-sonnet-4-6 .tooling/bin/spawn-atomic.sh ...`
 # Override permanente: edite este arquivo e commite.
 
-# ─── Modelos por camada ──────────────────────────────────────────
-# Variáveis Claude CLI: --model <id> --effort <low|medium|high>
+# ─── Modo de operação ────────────────────────────────────────────
+# MMB_MODE controla o perfil global do andaime.
 #
-# Hoje: tudo no topo da pilha (Opus + effort high).
-# Quando maturar: experimentar atômicos com modelo menor (Sonnet
-# ou Haiku) — ver memória `feedback_model_per_layer.md`.
+#   normal → Opus + effort high em todas as camadas. Produção.
+#   fast   → Haiku + effort low em todas as camadas. Smoke test,
+#            iteração de desenvolvimento do próprio andaime.
+#
+# Override por sessão: `MMB_MODE=fast .tooling/bin/up.sh`.
+# Defaults individuais ainda podem ser sobrescritos depois (env
+# var específica vence MMB_MODE).
 
-: "${MMB_MODEL_MASTER:=claude-opus-4-7}"
-: "${MMB_EFFORT_MASTER:=high}"
+: "${MMB_MODE:=normal}"
 
-: "${MMB_MODEL_PROJECT_ORCHESTRATOR:=claude-opus-4-7}"
-: "${MMB_EFFORT_PROJECT_ORCHESTRATOR:=high}"
+case "$MMB_MODE" in
+  fast)
+    _mmb_default_model="claude-haiku-4-5-20251001"
+    _mmb_default_effort="low"
+    : "${MMB_HEARTBEAT_TIMEOUT_DEFAULT:=60}"
+    ;;
+  normal)
+    _mmb_default_model="claude-opus-4-7"
+    _mmb_default_effort="high"
+    : "${MMB_HEARTBEAT_TIMEOUT_DEFAULT:=600}"
+    ;;
+  *)
+    echo "config.sh: MMB_MODE inválido '$MMB_MODE' (use normal|fast)" >&2
+    return 1 2>/dev/null || exit 1
+    ;;
+esac
 
-: "${MMB_MODEL_ATOMIC:=claude-opus-4-7}"
-: "${MMB_EFFORT_ATOMIC:=high}"
+# ─── Modelos por camada ──────────────────────────────────────────
+# Variáveis Claude CLI: --model <id> --effort <low|medium|high|xhigh|max>
+#
+# Defaults vêm do MMB_MODE. Override pontual:
+#   MMB_MODEL_ATOMIC=claude-sonnet-4-6 .tooling/bin/spawn-atomic.sh ...
+
+: "${MMB_MODEL_MASTER:=$_mmb_default_model}"
+: "${MMB_EFFORT_MASTER:=$_mmb_default_effort}"
+
+: "${MMB_MODEL_PROJECT_ORCHESTRATOR:=$_mmb_default_model}"
+: "${MMB_EFFORT_PROJECT_ORCHESTRATOR:=$_mmb_default_effort}"
+
+: "${MMB_MODEL_ATOMIC:=$_mmb_default_model}"
+: "${MMB_EFFORT_ATOMIC:=$_mmb_default_effort}"
+
+unset _mmb_default_model _mmb_default_effort
 
 # ─── Permissões ──────────────────────────────────────────────────
 # Default: skip pra não interromper fluxo cross-repo. Confirmação
@@ -53,10 +84,10 @@
 # Threshold (segundos) sem heartbeat antes do orq considerar um
 # filho zumbi. Configurável via env: MMB_HEARTBEAT_TIMEOUT=300 ...
 #
-# 10 min é margem larga: atômico em "baking" pesado pode levar 2-3
-# min entre turns. Ajustar baixo se polling de orq é muito frequente.
+# 10 min é margem larga (normal); 1 min (fast). Default deriva do
+# MMB_MODE — sobrescritível.
 
-: "${MMB_HEARTBEAT_TIMEOUT:=600}"
+: "${MMB_HEARTBEAT_TIMEOUT:=${MMB_HEARTBEAT_TIMEOUT_DEFAULT:-600}}"
 
 # ─── Helpers ─────────────────────────────────────────────────────
 # Monta a string de flags pra passar pro `claude` CLI de uma

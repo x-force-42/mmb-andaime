@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# Worker stateless do MMB — processa UMA mensagem do inbox e morre.
+#
+# Invocado por commd.sh quando uma nova mensagem aparece em
+# .tooling/inbox/<dest>/. Cada worker é um processo curto:
+#
+#   1. Carrega profile do papel (master.md ou project-orchestrator.md)
+#      como --append-system-prompt.
+#   2. Anexa um "stateless rider" instruindo o agente sobre o
+#      ciclo de vida de um worker.
+#   3. Dispara `claude -p` com o user prompt apontando pra mensagem.
+#   4. Output (stdout+stderr) vai pra .tooling/logs/workers/<dest>.log.
+#
+# Uso (manual ou via commd):
+#   worker.sh <dest> <inbox-file>
+#
+#   <dest>        master | core | cockpit | aquarium
+#   <inbox-file>  caminho absoluto pra arquivo de mensagem
+#
+# Concorrência: commd serializa via flock por destinatário antes
+# de invocar. Worker não toma lock próprio.
+
+set -euo pipefail
+
+TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MMB_ROOT="$(dirname "$TOOLING_DIR")"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/config.sh"
+
+DEST="${1:-}"
+INBOX_FILE="${2:-}"
+
+if [ -z "$DEST" ] || [ -z "$INBOX_FILE" ]; then
+  echo "Uso: $0 <dest> <inbox-file>" >&2
+  exit 1
+fi
+
+case "$DEST" in
+  master|core|cockpit|aquarium) ;;
+  *) echo "ERRO: dest inválido: $DEST" >&2; exit 2;;
+esac
+
+if [ ! -f "$INBOX_FILE" ]; then
+  echo "ERRO: inbox-file não existe: $INBOX_FILE" >&2
+  exit 2
+fi
+
+# CWD e profile por papel
+case "$DEST" in
+  master)
+    CWD="$MMB_ROOT"
+    PROFILE="$TOOLING_DIR/profiles/master.md"
+    LAYER="master"
+    ;;
+  core)
+    CWD="$MMB_ROOT/mmb-core"
+    PROFILE="$TOOLING_DIR/profiles/project-orchestrator.md"
+    LAYER="project"
+    ;;
+  cockpit)
+    CWD="$MMB_ROOT/mmb-cockpit"
+    PROFILE="$TOOLING_DIR/profiles/project-orchestrator.md"
+    LAYER="project"
+    ;;
+  aquarium)
+    CWD="$MMB_ROOT/mmb-aquarium"
+    PROFILE="$TOOLING_DIR/profiles/project-orchestrator.md"
+    LAYER="project"
+    ;;
+esac
+
+if [ ! -f "$PROFILE" ]; then
+  echo "ERRO: profile não existe: $PROFILE" >&2
+  exit 2
+fi
+
+# Log path por destino
+LOG_DIR="$TOOLING_DIR/logs/workers"
+mkdir -p "$LOG_DIR"
+LOG="$LOG_DIR/${DEST}.log"
+
+# Flags do claude conforme camada
+CLAUDE_FLAGS=$(mmb_claude_flags "$LAYER")
+
+# Stateless rider — apendado ao profile. Sobrescreve premissas de
+# "sessão viva" pra reduzir confusão do agente sobre o que ele é.
+STATELESS_RIDER=$(cat <<'EOF'
+
+---
+
+# WORKER STATELESS (v0.3+) — override de modo
+
+Você está rodando como worker invocado pelo commd. **Atenção:**
+
+1. **Esta invocação processa UMA mensagem do inbox e morre.** Não
+   há próximo turn pra você — quando seu output termina, o processo
+   acaba.
+2. **Você NÃO tem polling.** Seções de "polling-on-every-turn" e
+   "supervision tick" no profile pertencem ao modo antigo (sessão
+   viva). Ignore.
+3. **Você NÃO tem heartbeat.** Agent registry / heartbeats são pra
+   atômicos, não pra você.
+4. **Memória entre invocações vive fora de você:**
+   - GitHub (issues, PRs, comments)
+   - `/MMB/.tooling/inbox/<dest>/` (mensagens passadas — leia se
+     contexto histórico for relevante)
+   - `/MMB/.tooling/intents/<date>-<slug>/` (briefings + status)
+   - `/MMB/.tooling/logs/journal.jsonl` (eventos estruturados)
+5. **Não tente "esperar" por algo** (resposta de outro agente,
+   timer, etc.). Faça o que dá pra fazer agora e saia.
+6. **Quando terminar, escreva 2-5 linhas de resumo via stdout.**
+   Vai pro log de worker (`logs/workers/<dest>.log`) e o Rick lê
+   no tmux pane.
+7. **Conversa com outros agentes ainda é via `msg.sh`** — só lembre
+   que o destinatário também é um worker stateless (ou o Mestre
+   interativo).
+EOF
+)
+
+# Monta o append-system-prompt completo (profile + rider).
+# claude --append-system-prompt aceita string única.
+APPEND_PROMPT="$(cat "$PROFILE")
+$STATELESS_RIDER"
+
+# User prompt — direto ao ponto.
+USER_PROMPT=$(cat <<EOF
+Mensagem nova no seu inbox: $INBOX_FILE
+
+Leia o arquivo (frontmatter + body), identifique o type, e
+processe conforme seu papel. Quando terminar, escreva 2-5 linhas
+de resumo do que fez.
+
+CWD: $(pwd)
+Worker ID: $DEST-$$
+EOF
+)
+
+# Cabeçalho no log pra delimitar invocações
+{
+  echo
+  echo "================================================================"
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] worker $DEST pid=$$"
+  echo "  msg:    $INBOX_FILE"
+  echo "  model:  $(echo "$CLAUDE_FLAGS" | grep -oE 'claude-[a-z0-9-]+' || echo "?")"
+  echo "  cwd:    $CWD"
+  echo "================================================================"
+} >> "$LOG"
+
+# Dispara claude -p. Output append no log. cwd via subshell.
+(
+  cd "$CWD"
+  # MMB_TAB pra que msg.sh (se chamado de dentro) saiba o remetente
+  export MMB_TAB="$DEST"
+  export MMB_AGENT_ID="$DEST-$$"
+  # shellcheck disable=SC2086
+  claude -p "$USER_PROMPT" \
+    $CLAUDE_FLAGS \
+    --append-system-prompt "$APPEND_PROMPT" \
+    --output-format text \
+    2>&1
+) >> "$LOG" || {
+  EXIT=$?
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] worker $DEST EXIT=$EXIT" >> "$LOG"
+  exit $EXIT
+}
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] worker $DEST DONE" >> "$LOG"

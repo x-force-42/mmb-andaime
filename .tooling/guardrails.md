@@ -8,6 +8,18 @@ andaime. Cada profile (`master.md`, `project-orchestrator.md`,
 **Convenção:** ❌ = nunca; ✅ = fazer assim; 🛡️ = onde no andaime
 isso é mitigado.
 
+> **Atualização v0.3+ — workers stateless.** Orq locais não são mais
+> sessões Claude vivas; são processos efêmeros disparados pelo
+> `commd` quando uma mensagem cai no inbox. Implicações:
+> - **L8** (polling do orq) e **L12** (supervision tick do orq) viram
+>   **obsoletos** — worker não tem turn, não tem filho pra supervisionar
+>   entre invocações.
+> - **M5** (polling do master) **continua valendo** — master segue
+>   sessão Claude interativa.
+> - **A6** (heartbeat do atômico) **continua valendo** — atômico
+>   continua processo de vida média em pane tmux.
+> - Novo: **L14** sobre não "aguardar" dentro do worker (escale + termine).
+
 ## Mestre
 
 ### M1 — Criar issue diretamente no GitHub
@@ -135,23 +147,33 @@ isso é mitigado.
    `msg.sh master error task-abortada-<id> ...`.
 🛡️ Script `task-abort.sh` existe especificamente pra isso.
 
-### L8 — Pular polling do inbox no início do turn (v0.1+)
+### ~~L8~~ — Pular polling do inbox no início do turn (OBSOLETO desde v0.3)
 
-❌ Aguardar passivamente ping sem checar mensagens frias.
-✅ Primeira ação de cada turn:
-   `ls -1t .tooling/inbox/<seu-id>/ | grep -v '^\.'`. Mesma
-   regra do master.
-🛡️ Polling cobre pings perdidos + sessão recém-iniciada
-   pegando mensagens acumuladas.
+> No modelo de workers stateless, o `commd` invoca o worker com a
+> mensagem específica como parâmetro. Não há "início de turn" pra
+> fazer polling. Worker pode ler inbox por contexto histórico
+> (mensagens da mesma thread), mas não está obrigado.
 
-### L12 — Esquecer supervision tick (v0.1+)
+### ~~L12~~ — Esquecer supervision tick (OBSOLETO desde v0.3)
 
-❌ Spawnar atômico e nunca mais checar se ele está vivo.
-✅ Em turnos ociosos (ou ao receber status do mestre), rodar:
-   `.tooling/bin/agents.sh check-children <seu-id>`. Se
-   reportar STUCK, `task-abort.sh` + `msg.sh master error`.
-🛡️ Default threshold é `MMB_HEARTBEAT_TIMEOUT=600` (10 min).
-   Configurável em `config.sh` ou via env.
+> Worker stateless não fica vivo entre invocações; não há "checar
+> filho periodicamente". A supervision de atômicos passa a ser
+> responsabilidade do *próximo* worker do mesmo papel (que ao
+> receber qualquer mensagem nova, pode rodar `agents.sh
+> check-children` se fizer sentido) ou de um cron simples.
+
+### L14 — Worker tentar "aguardar" dentro da invocação (v0.3+)
+
+❌ Worker recebe briefing ambíguo, manda `msg.sh master question`,
+   e fica tentando *esperar* a answer chegar (sleep, loop, etc).
+✅ Escala via `msg.sh master question`, escreve resumo curto via
+   stdout dizendo "aguardando answer X (thread Y)", e **termina**.
+   Quando a answer chegar no inbox, o commd dispara um worker novo
+   que lê a thread, vê o estado, e continua o trabalho.
+🛡️ Worker stateless é caro de manter vivo (claude -p consume
+   tokens enquanto roda). "Esperar" é desperdício e bloqueia o
+   slot serializado por destinatário, impedindo outras mensagens
+   do mesmo papel de serem processadas.
 
 ### L13 — Erro de fluxo só em prosa, não estruturado (v0.2+)
 

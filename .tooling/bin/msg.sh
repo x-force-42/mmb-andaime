@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Envia mensagem entre sessões Claude via mailbox FS + ping tmux.
+# Envia mensagem entre agentes do MMB via mailbox FS.
 #
 # Uso:
 #   msg.sh <to> <type> <subject-slug> <body-file> [thread]
@@ -15,18 +15,17 @@
 #   1. Lê o corpo da mensagem.
 #   2. Cria arquivo em .tooling/inbox/<to>/<timestamp>_<from>_<type>_<subject>.md
 #      com frontmatter (from/to/type/subject/thread/created).
-#   3. Envia ping curto via tmux send-keys pra tab do destinatário:
-#      "📨 [from→to] <type>: <subject>"
-#      "   → <path-do-arquivo>"
+#
+# O wakeup do destinatário é responsabilidade do commd.sh (daemon
+# central que faz watch dos inboxes via inotifywait e dispatcha
+# workers stateless). msg.sh NÃO sinaliza nada via tmux — apenas
+# persiste o arquivo. Isso elimina a classe de bugs de "ping
+# perdido" que afetou v0.1.
 #
 # Auto-detecção do 'from':
 #   - Se env MMB_TAB está setado, usa esse valor.
 #   - Senão, infere pela tab tmux atual.
-#
-# Convenções:
-#   - Nome de arquivo: ordenável por timestamp natural.
-#   - Ping sempre tem prefixo 📨 — profiles instruem agentes a
-#     reconhecer esse marcador.
+#   - Fallback: 'unknown'.
 
 set -euo pipefail
 
@@ -152,31 +151,19 @@ LOCK="$INBOX_DIR/.lock"
 ) 9>>"$LOCK"
 
 echo "✓ Mensagem gravada: $TARGET"
+echo "  Destinatário será acordado pelo commd.sh (daemon)."
 
-# Envia ping via tmux se possível
-if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; then
-  # Sempre envia pro window 0 do destinatário (orquestrador, não atômico)
-  TARGET_TAB="$TO"
-
-  # Ping curto, ASCII-safe (nada que precise quoting)
-  PING_LINE_1="MSG [$FROM->$TO] $TYPE: $SUBJECT"
-  PING_LINE_2="  inbox: $TARGET"
-
-  # Encontra o índice da window por nome
-  WINDOW_IDX=$(tmux list-windows -t "$MMB_TMUX_SESSION" -F '#{window_index}:#{window_name}' \
-    | grep ":$TARGET_TAB\$" | head -1 | cut -d: -f1 || true)
-
-  if [ -n "$WINDOW_IDX" ]; then
-    # Manda no pane 0 (orquestrador). Atômicos vivem em panes >0.
-    tmux send-keys -t "$MMB_TMUX_SESSION:$WINDOW_IDX.0" "" C-m
-    tmux send-keys -t "$MMB_TMUX_SESSION:$WINDOW_IDX.0" "$PING_LINE_1" C-m
-    tmux send-keys -t "$MMB_TMUX_SESSION:$WINDOW_IDX.0" "$PING_LINE_2" C-m
-    echo "✓ Ping enviado pra mmb:$WINDOW_IDX.0 (window '$TARGET_TAB')"
-  else
-    echo "AVISO: window '$TARGET_TAB' não encontrada na sessão '$MMB_TMUX_SESSION'."
-    echo "       Mensagem foi gravada mas destinatário não foi notificado via ping."
+# Sanity check: avisa se commd não está rodando (sem bloquear).
+# commd.sh grava seu PID em state/commd.pid quando inicia.
+COMMD_PID_FILE="$TOOLING_DIR/state/commd.pid"
+if [ -f "$COMMD_PID_FILE" ]; then
+  COMMD_PID=$(cat "$COMMD_PID_FILE" 2>/dev/null || echo "")
+  if [ -n "$COMMD_PID" ] && ! kill -0 "$COMMD_PID" 2>/dev/null; then
+    echo "AVISO: commd.pid existe mas processo $COMMD_PID está morto." >&2
+    echo "       Mensagem foi gravada mas ninguém vai processá-la até subir o daemon." >&2
+    echo "       Suba com: /MMB/.tooling/bin/commd.sh start" >&2
   fi
 else
-  echo "AVISO: tmux indisponível. Mensagem gravada, sem ping. Destinatário leria via:"
-  echo "       ls $INBOX_DIR/"
+  echo "AVISO: commd não parece estar rodando (state/commd.pid ausente)." >&2
+  echo "       Suba com: /MMB/.tooling/bin/commd.sh start" >&2
 fi

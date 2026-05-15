@@ -1,5 +1,25 @@
 # Protocolo de comunicação entre sessões — MMB v3
 
+> **⚠️ Atualização v0.3+ — workers stateless.** A peça "ping via
+> `tmux send-keys`" foi removida. O wakeup do destinatário é
+> responsabilidade do **`commd.sh`** — daemon central que faz
+> `inotifywait` em `.tooling/inbox/` e dispara worker stateless
+> (`worker.sh <dest> <file>`) por mensagem nova. Workers usam
+> `claude -p` (modo print), processam UMA mensagem e morrem.
+>
+> Implicações:
+> - Orq locais não são mais sessões Claude vivas; tabs `core/cockpit/aquarium`
+>   do tmux viram só `tail -F` dos logs de worker.
+> - Master continua sessão Claude interativa (Rick conversa com ele).
+> - Atômicos continuam como estavam (panes efêmeros, open-pr.sh, kill-pane).
+> - `msg.sh` continua sendo o helper único de envio — mas só grava
+>   arquivo; não faz mais `tmux send-keys`.
+>
+> O resto deste doc descreve o modelo conceitual de mensageria
+> (tipos, frontmatter, fluxos) que continua válido. Onde fala em
+> "ping" / "polling-on-every-turn" / "session viva", é texto
+> histórico — o commd cobre o que aquilo cobria, com mais robustez.
+
 ## Por que este doc existe
 
 Sessões Claude são silos. Não há API nativa de "enviar mensagem
@@ -8,7 +28,7 @@ inter-session messaging.
 
 Pra remover Rick do loop de relay humano, definimos este
 protocolo de mensageria assíncrona baseado em **filesystem
-+ ping via tmux**.
++ daemon central (`commd`) + workers efêmeros (`claude -p`)**.
 
 ## Topologia
 
