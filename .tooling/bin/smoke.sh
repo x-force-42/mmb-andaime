@@ -104,16 +104,27 @@ EOF
   MMB_TAB=master "$TOOLING_DIR/bin/msg.sh" core briefing smoke-comm "$brief" "$thread" \
     || { echo "FAIL: msg.sh retornou erro"; exit 2; }
 
-  # Espera resposta no inbox/master/ — poll a cada 2s, timeout 90s
+  # Espera resposta no inbox/master/ — poll a cada 2s, timeout 90s.
+  #
+  # Busca abrange top-level + .processing + .done + .dead (master worker
+  # stateless consome a resposta imediatamente após ela chegar, então o
+  # arquivo passa rápido por .processing/.done — só top-level dá falso-
+  # negativo). -maxdepth 1 + -newer "$brief" elimina falso-positivo
+  # com históricos de smoke runs anteriores que já moveram pra .done/.
   echo "→ aguardando status de volta (timeout 90s)..."
   local timeout=90
   local elapsed=0
   local found=""
+  local master_inbox="$TOOLING_DIR/inbox/master"
   while [ "$elapsed" -lt "$timeout" ]; do
     sleep 2
     elapsed=$((elapsed + 2))
-    found=$(find "$TOOLING_DIR/inbox/master" -type f -name "*smoke-comm-ok*" \
-              -not -name '.*' 2>/dev/null | head -1)
+    found=$(find "$master_inbox" \
+                 "$master_inbox/.processing" \
+                 "$master_inbox/.done" \
+                 "$master_inbox/.dead" \
+              -maxdepth 1 -type f -name "*smoke-comm-ok*" -not -name '.*' \
+              -newer "$brief" 2>/dev/null | head -1)
     if [ -n "$found" ]; then
       break
     fi
