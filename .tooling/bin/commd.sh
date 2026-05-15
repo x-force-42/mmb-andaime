@@ -117,6 +117,12 @@ cmd_stop() {
 
 dispatch() {
   local file="$1"
+  # inotifywait às vezes emite //home/... com slash duplicado (WSL2/kernel
+  # quirk; ainda não isolado). Sem normalizar, ${file#$INBOX_BASE/} falha
+  # e a mensagem é descartada com "dest desconhecido".
+  while [[ "$file" == *"//"* ]]; do
+    file="${file//\/\///}"
+  done
   local rel="${file#$INBOX_BASE/}"
   local dest="${rel%%/*}"
   local basename
