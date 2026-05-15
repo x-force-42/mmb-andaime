@@ -15,13 +15,24 @@
 # As tabs core/cockpit/aquarium agora são só janelas de observação.
 #
 # Uso:
-#   .tooling/bin/up.sh           # modo normal (Opus+high)
-#   MMB_MODE=fast .tooling/bin/up.sh   # smoke (Haiku+low)
+#   .tooling/bin/up.sh                       # normal (Opus tudo)
+#   MMB_MODE=fast .tooling/bin/up.sh         # smoke (Haiku tudo)
+#   MMB_MODE=balanced .tooling/bin/up.sh     # trabalho real (Opus master, Sonnet workers/atomic)
+#   .tooling/bin/up.sh --no-master-claude    # window master fica vazia (zsh) — quando o Master
+#                                              é uma sessão Claude externa a esta tmux
 #
 # Se a sessão já existe, anexa. Pra recriar do zero:
 #   tmux kill-session -t mmb && .tooling/bin/up.sh
 
 set -euo pipefail
+
+NO_MASTER_CLAUDE=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-master-claude) NO_MASTER_CLAUDE=1 ;;
+    *) echo "flag desconhecida: $arg" >&2; exit 2 ;;
+  esac
+done
 
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MMB_ROOT="$(dirname "$TOOLING_DIR")"
@@ -62,9 +73,17 @@ tmux new-session -d -s "$SESSION" -n master -c "$MMB_ROOT"
 tmux send-keys -t "$SESSION:master" \
   "export MMB_TAB=master MMB_AGENT_ID=master MMB_MODE=$MMB_MODE" C-m
 
-MASTER_PROMPT="Você é o Orquestrador Mestre do MMB (modo $MMB_MODE). Leia nesta ordem ANTES de qualquer outra coisa: /MMB/CLAUDE.md, /MMB/.tooling/protocol.md, /MMB/.tooling/guardrails.md, /MMB/.tooling/profiles/master.md. Quando terminar de ler, cumprimente Rick em 1-2 linhas e pergunte em que pode ajudar. ARQUITETURA v0.3: orq locais (core/cockpit/aquarium) são WORKERS STATELESS — quando você roda msg.sh, o commd dispara um processo claude -p efêmero do papel correto e o output vai pra tab tmux correspondente. Você (Mestre) continua interativo. REGRAS DURAS: (1) nunca rode 'gh issue create'; orq local materializa. (2) antes de qualquer msg.sh briefing, mostre o briefing pro Rick e aguarde 'ok'. (3) toda comunicação com orq via /MMB/.tooling/bin/msg.sh. (4) antes de iniciar trabalho, liste pendências em /MMB/.tooling/inbox/master/ via ls."
-tmux send-keys -t "$SESSION:master" \
-  "claude $MASTER_FLAGS \"$MASTER_PROMPT\"" C-m
+if [ "$NO_MASTER_CLAUDE" -eq 1 ]; then
+  # Master vive em sessão Claude externa a este tmux. A window 'master'
+  # fica como zsh limpo — útil pra você inspecionar inboxes/intents
+  # manualmente sem competir com outro Claude pelo papel.
+  tmux send-keys -t "$SESSION:master" \
+    "echo 'master window: no Claude (use external Claude Code session). MMB_MODE=$MMB_MODE'" C-m
+else
+  MASTER_PROMPT="Você é o Orquestrador Mestre do MMB (modo $MMB_MODE). Leia nesta ordem ANTES de qualquer outra coisa: /MMB/CLAUDE.md, /MMB/.tooling/protocol.md, /MMB/.tooling/guardrails.md, /MMB/.tooling/profiles/master.md. Quando terminar de ler, cumprimente Rick em 1-2 linhas e pergunte em que pode ajudar. ARQUITETURA v0.3: orq locais (core/cockpit/aquarium) são WORKERS STATELESS — quando você roda msg.sh, o commd dispara um processo claude -p efêmero do papel correto e o output vai pra tab tmux correspondente. Você (Mestre) continua interativo. REGRAS DURAS: (1) nunca rode 'gh issue create'; orq local materializa. (2) antes de qualquer msg.sh briefing, mostre o briefing pro Rick e aguarde 'ok'. (3) toda comunicação com orq via /MMB/.tooling/bin/msg.sh. (4) antes de iniciar trabalho, liste pendências em /MMB/.tooling/inbox/master/ via ls."
+  tmux send-keys -t "$SESSION:master" \
+    "claude $MASTER_FLAGS \"$MASTER_PROMPT\"" C-m
+fi
 
 # ─── Window 1: commd (daemon) ───────────────────────────────────
 tmux new-window -t "$SESSION" -n commd -c "$MMB_ROOT"
@@ -88,6 +107,22 @@ if command -v jq >/dev/null 2>&1; then
   tmux new-window -t "$SESSION" -n journal -c "$MMB_ROOT"
   tmux send-keys -t "$SESSION:journal" \
     "tail -F $TOOLING_DIR/logs/journal.jsonl | jq -c '.'" C-m
+fi
+
+# ─── Windows 6-7: aquário (relay+dev) + bridge — só fora do modo fast
+# Smoke (MMB_MODE=fast) não precisa de visualização viva.
+if [ "$MMB_MODE" != "fast" ] && [ -d "$MMB_ROOT/mmb-aquarium" ]; then
+  # Window aquario: tenta dev:full (sobe Vite + relay juntos via concurrently
+  # — script criado pela task 1.1 do épico aquario-bridge). Fallback p/
+  # dev separado caso 1.1 ainda não tenha mergeado.
+  tmux new-window -t "$SESSION" -n aquario -c "$MMB_ROOT/mmb-aquarium"
+  tmux send-keys -t "$SESSION:aquario" \
+    "if npm run | grep -q dev:full; then npm run dev:full; else echo '⚠ dev:full não existe ainda (task 1.1 não mergeou). Rodando relay+dev separados:'; npm run relay & npm run dev; fi" C-m
+
+  # Window bridge: python daemon que conecta no relay como publisher.
+  tmux new-window -t "$SESSION" -n bridge -c "$MMB_ROOT"
+  tmux send-keys -t "$SESSION:bridge" \
+    "$TOOLING_DIR/bin/aquario-bridge.sh" C-m
 fi
 
 tmux select-window -t "$SESSION:master"

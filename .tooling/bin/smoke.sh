@@ -131,11 +131,127 @@ EOF
   cat "$found" | sed 's/^/  /'
 }
 
+cmd_aquario() {
+  echo "================================================================"
+  echo " SMOKE — modo: aquario | RELAY_URL: ${RELAY_URL:-ws://localhost:8080/ws}"
+  echo "================================================================"
+
+  # Precisa do venv do bridge pro cliente Python escutar o relay
+  local venv_py="$TOOLING_DIR/aquario-bridge/.venv/bin/python"
+  if [ ! -x "$venv_py" ]; then
+    echo "FAIL: venv do bridge não existe ($venv_py)"
+    echo "       Suba o bridge ao menos uma vez pra criar:"
+    echo "       $TOOLING_DIR/bin/aquario-bridge.sh"
+    exit 2
+  fi
+  echo "✓ venv bridge presente"
+
+  # Precisa do bridge vivo
+  if ! pgrep -f 'aquario-bridge\.py' >/dev/null; then
+    echo "FAIL: aquario-bridge.py não está rodando."
+    echo "       Suba via $TOOLING_DIR/bin/aquario-bridge.sh"
+    echo "       (ou abra a tab 'bridge' do tmux: tmux select-window -t mmb:bridge)"
+    exit 2
+  fi
+  echo "✓ bridge vivo"
+
+  # Cliente WS Python efêmero: conecta, escuta, sai quando vê born
+  local listener_log
+  listener_log=$(mktemp)
+  local listener_pid
+  "$venv_py" - <<'PYEOF' > "$listener_log" 2>&1 &
+import asyncio, json, os, sys
+import websockets
+
+URL = os.environ.get("RELAY_URL", "ws://localhost:8080/ws")
+
+async def main():
+    try:
+        async with websockets.connect(URL) as ws:
+            print(f"listener: connected to {URL}", flush=True)
+            while True:
+                raw = await asyncio.wait_for(ws.recv(), timeout=60)
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                print(f"got: {raw}", flush=True)
+                if (msg.get("type") == "event"
+                    and msg.get("kind") == "born"
+                    and (msg.get("name") or "").startswith("[W] worker-")):
+                    print("MATCH: worker born", flush=True)
+                    return
+    except asyncio.TimeoutError:
+        print("FAIL: timeout 60s sem 'born'", flush=True)
+        sys.exit(1)
+    except Exception as e:
+        print(f"FAIL: {type(e).__name__}: {e}", flush=True)
+        sys.exit(2)
+
+asyncio.run(main())
+PYEOF
+  listener_pid=$!
+  echo "✓ listener Python rodando (pid=$listener_pid)"
+
+  # Dá um sopro pro listener conectar antes de gerar evento
+  sleep 2
+
+  # Dispara um briefing trivial (reuso smoke comm body)
+  local ts thread brief intent_dir
+  ts=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+  thread="smoke-aquario-$ts"
+  intent_dir="$TOOLING_DIR/intents/${ts}-smoke-aquario"
+  mkdir -p "$intent_dir"
+  brief="$intent_dir/master-briefing.md"
+  cat > "$brief" <<EOF
+# Smoke aquario briefing — $ts
+
+> Briefing canônico do smoke aquario. Não é trabalho real.
+> Você (worker stateless) só precisa NASCER (que já fez ao ser invocado)
+> e MANDAR UM STATUS curto pro master pra terminar com exit 0.
+
+## O que fazer
+
+\`\`\`bash
+echo "smoke aquario ok | worker=\$MMB_AGENT_ID | ts=\$(date -u +%Y-%m-%dT%H:%M:%SZ)" \\
+  | /MMB/.tooling/bin/msg.sh master status smoke-aquario-ok - $thread
+\`\`\`
+
+Depois saia.
+EOF
+  echo "✓ briefing gerado: $brief"
+
+  echo "→ dispatching..."
+  MMB_TAB=master "$TOOLING_DIR/bin/msg.sh" core briefing smoke-aquario "$brief" "$thread" \
+    || { echo "FAIL: msg.sh"; kill "$listener_pid" 2>/dev/null; exit 2; }
+
+  # Aguarda o listener (foi pra background); timeout do listener é 60s
+  echo "→ aguardando listener (timeout 60s no Python)..."
+  if wait "$listener_pid"; then
+    echo "================================================================"
+    echo " SMOKE AQUARIO PASS"
+    echo "================================================================"
+    tail -5 "$listener_log" | sed 's/^/  /'
+    rm -f "$listener_log"
+    return 0
+  else
+    echo "================================================================"
+    echo " SMOKE AQUARIO FAIL"
+    echo "================================================================"
+    echo "Listener output:"
+    cat "$listener_log" | sed 's/^/  /'
+    rm -f "$listener_log"
+    return 1
+  fi
+}
+
 case "$MODE" in
   comm|"") cmd_comm ;;
+  aquario) cmd_aquario ;;
   *)
-    echo "Uso: $0 [comm]" >&2
-    echo "Por enquanto só 'comm' é implementado. 'full' vem depois." >&2
+    echo "Uso: $0 [comm|aquario]" >&2
+    echo "  comm    — valida pipeline msg.sh → commd → worker → status (canário básico)" >&2
+    echo "  aquario — valida pipeline + bridge.py publicando no relay WS do aquário" >&2
     exit 1
     ;;
 esac

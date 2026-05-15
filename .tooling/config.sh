@@ -22,17 +22,28 @@
 
 case "$MMB_MODE" in
   fast)
+    # Smoke / iteração rápida de método. Haiku tudo, effort low.
     _mmb_default_model="claude-haiku-4-5-20251001"
     _mmb_default_effort="low"
     : "${MMB_HEARTBEAT_TIMEOUT_DEFAULT:=60}"
     ;;
+  balanced)
+    # Trabalho real. Master pesado (decisão cross-repo), workers/atomic
+    # leves (rotina executiva). Default por camada definido logo abaixo.
+    # _mmb_default_* não usado em balanced — cada camada vem com modelo
+    # explícito; ainda definimos por compatibilidade com helpers que leem.
+    _mmb_default_model="claude-sonnet-4-6"
+    _mmb_default_effort="high"
+    : "${MMB_HEARTBEAT_TIMEOUT_DEFAULT:=600}"
+    ;;
   normal)
+    # Produção tradicional. Opus em todas as camadas. Qualidade > tudo.
     _mmb_default_model="claude-opus-4-7"
     _mmb_default_effort="high"
     : "${MMB_HEARTBEAT_TIMEOUT_DEFAULT:=600}"
     ;;
   *)
-    echo "config.sh: MMB_MODE inválido '$MMB_MODE' (use normal|fast)" >&2
+    echo "config.sh: MMB_MODE inválido '$MMB_MODE' (use normal|fast|balanced)" >&2
     return 1 2>/dev/null || exit 1
     ;;
 esac
@@ -43,14 +54,23 @@ esac
 # Defaults vêm do MMB_MODE. Override pontual:
 #   MMB_MODEL_ATOMIC=claude-sonnet-4-6 .tooling/bin/spawn-atomic.sh ...
 
-: "${MMB_MODEL_MASTER:=$_mmb_default_model}"
-: "${MMB_EFFORT_MASTER:=$_mmb_default_effort}"
-
-: "${MMB_MODEL_PROJECT_ORCHESTRATOR:=$_mmb_default_model}"
-: "${MMB_EFFORT_PROJECT_ORCHESTRATOR:=$_mmb_default_effort}"
-
-: "${MMB_MODEL_ATOMIC:=$_mmb_default_model}"
-: "${MMB_EFFORT_ATOMIC:=$_mmb_default_effort}"
+# Modo balanced sobrescreve por camada (master pesado, restante leve).
+# Outros modos: cada camada herda os defaults uniformes acima.
+if [ "$MMB_MODE" = "balanced" ]; then
+  : "${MMB_MODEL_MASTER:=claude-opus-4-7}"
+  : "${MMB_EFFORT_MASTER:=high}"
+  : "${MMB_MODEL_PROJECT_ORCHESTRATOR:=claude-sonnet-4-6}"
+  : "${MMB_EFFORT_PROJECT_ORCHESTRATOR:=medium}"
+  : "${MMB_MODEL_ATOMIC:=claude-sonnet-4-6}"
+  : "${MMB_EFFORT_ATOMIC:=high}"
+else
+  : "${MMB_MODEL_MASTER:=$_mmb_default_model}"
+  : "${MMB_EFFORT_MASTER:=$_mmb_default_effort}"
+  : "${MMB_MODEL_PROJECT_ORCHESTRATOR:=$_mmb_default_model}"
+  : "${MMB_EFFORT_PROJECT_ORCHESTRATOR:=$_mmb_default_effort}"
+  : "${MMB_MODEL_ATOMIC:=$_mmb_default_model}"
+  : "${MMB_EFFORT_ATOMIC:=$_mmb_default_effort}"
+fi
 
 unset _mmb_default_model _mmb_default_effort
 

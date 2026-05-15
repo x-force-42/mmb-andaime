@@ -29,3 +29,6 @@
 
 # Worktrees efêmeras que possam surgir na raiz
 /.worktrees/
+
+# Venv do aquario-bridge (runtime — recriável via aquario-bridge.sh)
+/.tooling/aquario-bridge/.venv/
