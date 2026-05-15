@@ -117,9 +117,14 @@ cmd_stop() {
 
 dispatch() {
   local file="$1"
-  # inotifywait às vezes emite //home/... com slash duplicado (WSL2/kernel
-  # quirk; ainda não isolado). Sem normalizar, ${file#$INBOX_BASE/} falha
-  # e a mensagem é descartada com "dest desconhecido".
+  # Normaliza path: WSL2/inotifywait às vezes corrompe leading-slash.
+  # Variantes observadas em produção:
+  #   "//home/..." — slash duplicado (Bug A original, fix em 804b59a)
+  #   "home/..."   — leading slash dropado (Bug A v2, observado em smoke comm)
+  # Sem normalizar, ${file#$INBOX_BASE/} falha e a mensagem é descartada
+  # com "dest desconhecido" (dest=home). Idempotência via poll salva da
+  # perda, mas o caminho rápido fica quebrado.
+  [[ "$file" != /* ]] && file="/$file"
   while [[ "$file" == *"//"* ]]; do
     file="${file//\/\///}"
   done
