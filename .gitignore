@@ -27,6 +27,9 @@
 /.tooling/state/heartbeats/*
 !/.tooling/state/heartbeats/.gitkeep
 
+# Archives dos resets — snapshots runtime, não esqueleto.
+/.tooling/archive/
+
 # Worktrees efêmeras que possam surgir na raiz
 /.worktrees/
 
