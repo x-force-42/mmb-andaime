@@ -149,12 +149,15 @@ RE_DISPATCH = re.compile(
     r"\] dispatch: dest=(?P<dest>\S+) file=(?P<file>\S+)"
 )
 
-# workers/<dest>.log: "[ts] worker <dest> DONE" ou "EXIT=N"
+# workers/<dest>.log: "[ts] worker <dest> DONE", "EXIT=N", ou "TIMEOUT after Ns"
 RE_WORKER_DONE = re.compile(
     r"\] worker (?P<dest>\S+) DONE\s*$"
 )
 RE_WORKER_EXIT = re.compile(
     r"\] worker (?P<dest>\S+) EXIT=(?P<code>\d+)\s*$"
+)
+RE_WORKER_TIMEOUT = re.compile(
+    r"\] worker (?P<dest>\S+) TIMEOUT after \d+s\s*$"
 )
 # Cabeçalho do worker tem o pid: "[ts] worker <dest> pid=NNNN"
 RE_WORKER_HEAD = re.compile(
@@ -205,6 +208,13 @@ class Bridge:
         m = RE_WORKER_DONE.search(line)
         if m:
             self._finish_worker(dest, kind="died_happy")
+            return
+        # TIMEOUT after Ns → died_defeated (worker estourou MMB_WORKER_TIMEOUT,
+        # commd já moveu pra .dead/). Tem que vir antes do EXIT porque o
+        # worker.sh loga TIMEOUT em vez de EXIT=124/137 quando timeout.
+        m = RE_WORKER_TIMEOUT.search(line)
+        if m:
+            self._finish_worker(dest, kind="died_defeated")
             return
         # EXIT=N → died_defeated
         m = RE_WORKER_EXIT.search(line)
