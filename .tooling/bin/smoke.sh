@@ -5,7 +5,8 @@
 #   light      — sandbox isolado, mock claude, valida C1-C6 (rápido)
 #   medium     — sandbox isolado, falhas controladas e recovery
 #   stress     — sandbox isolado, volume e concorrência (demorado)
-#   hardening  — light + medium (CI / validação pré-push)
+#   bridge     — unit test das regexes do aquario-bridge (sem sandbox)
+#   hardening  — light + medium + bridge (CI / validação pré-push)
 #   comm       — canal ponta-a-ponta (requer commd vivo + claude real)
 #   aquario    — canal + bridge WS (requer bridge + relay)
 #
@@ -633,6 +634,45 @@ cmd_light() {
     _fail "log não contém indicativo de instância já ativa"
   fi
 
+  # ─── L6: MMB_COMMD_POLL_INTERVAL=0 escape hatch ────
+  # Garante que desabilitar o safety net preserva o comportamento
+  # antigo: log indica "poll: desabilitado" e happy path passa.
+  echo
+  echo "── L6: MMB_COMMD_POLL_INTERVAL=0 escape hatch ──"
+  # L4 deixou commd vivo; precisa parar pra subir um novo c/ poll=0
+  "$_SANDBOX_TOOLING/bin/commd.sh" stop >/dev/null 2>&1 || true
+  sleep 1
+  _SANDBOX_COMMD_PID=""
+  rm -f "$inbox_core"/.done/*.md "$inbox_core"/.dead/*.md \
+        "$inbox_core"/.processing/*.md 2>/dev/null || true
+  : > "$_SANDBOX_TOOLING/logs/commd.log"
+  export MMB_WORKER_TIMEOUT=10 MMB_COMMD_POLL_INTERVAL=0
+  _sandbox_start_commd
+  if grep -q "poll: desabilitado" "$_SANDBOX_TOOLING/logs/commd.log"; then
+    _pass "log indica 'poll: desabilitado'"
+  else
+    _fail "commd.log não contém 'poll: desabilitado'"
+  fi
+  _sandbox_send_msg core "test-l6" "happy path com poll=0"
+  i=0
+  while (( i < 20 )); do
+    if [[ "$(_count_files "$inbox_core/.done")" -ge 1 ]]; then
+      break
+    fi
+    sleep 1
+    i=$((i+1))
+  done
+  done_c=$(_count_files "$inbox_core/.done")
+  if [[ "$done_c" -eq 1 ]]; then
+    _pass "happy path com poll=0 (.done=1)"
+  else
+    _fail "happy path quebrou: .done=$done_c"
+  fi
+  "$_SANDBOX_TOOLING/bin/commd.sh" stop >/dev/null 2>&1 || true
+  sleep 1
+  _SANDBOX_COMMD_PID=""
+  unset MMB_WORKER_TIMEOUT MMB_COMMD_POLL_INTERVAL
+
   echo
   echo "=== LIGHT PASS ==="
 
@@ -874,6 +914,129 @@ EOF
   fi
   kill "$_SANDBOX_PARASITE_PID" 2>/dev/null || true
   _SANDBOX_PARASITE_PID=""
+  "$_SANDBOX_TOOLING/bin/commd.sh" stop >/dev/null 2>&1 || true
+  sleep 1
+  _SANDBOX_COMMD_PID=""
+
+  # ─── M7: commd-poll-recovered em runtime ──────────
+  # Pausa inotifywait via SIGSTOP, escreve N msgs direto no top-level,
+  # aguarda 2× poll interval, retoma inotifywait. Safety net por poll
+  # tem que recuperar todas as msgs sem double-claim.
+  echo
+  echo "── M7: commd-poll-recovered em runtime ──"
+  for d in master core cockpit aquarium; do
+    rm -f "$_SANDBOX_TOOLING/inbox/$d"/*.md \
+          "$_SANDBOX_TOOLING/inbox/$d"/.done/*.md \
+          "$_SANDBOX_TOOLING/inbox/$d"/.dead/*.md \
+          "$_SANDBOX_TOOLING/inbox/$d"/.processing/*.md 2>/dev/null || true
+  done
+  : > "$_SANDBOX_TOOLING/logs/journal.jsonl"
+
+  export MMB_WORKER_TIMEOUT=10 MMB_COMMD_POLL_INTERVAL=3
+  _sandbox_start_commd
+  sleep 1  # deixa commd entrar no read loop
+
+  local commd_pid inotify_pid
+  commd_pid=$(cat "$_SANDBOX_TOOLING/state/commd.pid")
+  inotify_pid=$(pgrep -P "$commd_pid" inotifywait | head -1)
+  if [[ -z "$inotify_pid" ]]; then
+    _fail "inotifywait não encontrado (commd_pid=$commd_pid)"
+  fi
+  _pass "inotifywait localizado (pid=$inotify_pid)"
+
+  kill -STOP "$inotify_pid"
+  _pass "inotifywait STOP"
+
+  # Escreve 5 msgs direto no top-level (bypass msg.sh — formato compatível
+  # com dispatch: non-dotfile, frontmatter pro worker stub não interfere).
+  local ts
+  ts=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+  for i in $(seq 1 5); do
+    cat > "$inbox_core/${ts}_test_status_m7-${i}.md" <<MSGEOF
+---
+from: master
+to: core
+type: status
+subject: m7-${i}
+created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+---
+
+m7 test ${i}
+MSGEOF
+  done
+  local topl_before
+  topl_before=$(_count_files "$inbox_core")
+  if [[ "$topl_before" -eq 5 ]]; then
+    _pass "5 msgs no top-level (inotify bloqueado)"
+  else
+    _fail "top-level=$topl_before esperado 5 (inotify pode ter escapado)"
+  fi
+
+  # Espera 2× POLL_INTERVAL (6s) + folga
+  sleep 8
+
+  kill -CONT "$inotify_pid"
+  _pass "inotifywait CONT"
+
+  # Aguarda workers terminarem
+  i=0
+  while (( i < 20 )); do
+    if [[ "$(_count_files "$inbox_core/.done")" -ge 5 ]]; then
+      break
+    fi
+    sleep 1
+    i=$((i+1))
+  done
+
+  if [[ "$(_count_files "$inbox_core")" -eq 0 ]]; then
+    _pass "top-level zerado"
+  else
+    _fail "top-level=$(_count_files "$inbox_core") esperado 0"
+  fi
+  local done_m7
+  done_m7=$(_count_files "$inbox_core/.done")
+  if [[ "$done_m7" -eq 5 ]]; then
+    _pass ".done=5"
+  else
+    _fail ".done=$done_m7 esperado 5"
+  fi
+
+  local jpath="$_SANDBOX_TOOLING/logs/journal.jsonl"
+  local poll_count claim_dups
+  poll_count=$(python3 -c "
+import json
+n=0
+for L in open('$jpath'):
+  try:
+    if json.loads(L).get('event')=='commd-poll-recovered': n+=1
+  except: pass
+print(n)
+")
+  if [[ "$poll_count" -ge 5 ]]; then
+    _pass "commd-poll-recovered count=$poll_count (>=5)"
+  else
+    _fail "commd-poll-recovered count=$poll_count esperado >=5"
+  fi
+  claim_dups=$(python3 -c "
+import json, collections
+c=collections.Counter()
+for L in open('$jpath'):
+  try:
+    e=json.loads(L)
+    if e.get('event')=='commd-claim': c[e['file']]+=1
+  except: pass
+print(sum(1 for v in c.values() if v>1))
+")
+  if [[ "$claim_dups" -eq 0 ]]; then
+    _pass "zero double-claim"
+  else
+    _fail "double-claim count=$claim_dups"
+  fi
+
+  "$_SANDBOX_TOOLING/bin/commd.sh" stop >/dev/null 2>&1 || true
+  sleep 1
+  _SANDBOX_COMMD_PID=""
+  unset MMB_WORKER_TIMEOUT MMB_COMMD_POLL_INTERVAL
 
   echo
   echo "=== MEDIUM PASS ==="
@@ -1035,6 +1198,107 @@ cmd_stress() {
   _SANDBOX_COMMD_PID=""
   unset MMB_WORKER_TIMEOUT
 
+  # ─── S7: burst paralelo com poll ativo ────────────
+  # 50 msgs em paralelo pra core, MMB_COMMD_POLL_INTERVAL=3. Valida
+  # que com inotify normal + poll safety net, ninguém é duplicado e
+  # tudo chega em estado terminal. poll-recovered>0 é informativo
+  # (depende de inotify dropar evento), não obrigatório.
+  echo
+  echo "── S7: burst paralelo com poll ativo (50 msgs) ──"
+  for d in master core cockpit aquarium; do
+    rm -f "$_SANDBOX_TOOLING/inbox/$d"/*.md \
+          "$_SANDBOX_TOOLING/inbox/$d"/.done/*.md \
+          "$_SANDBOX_TOOLING/inbox/$d"/.dead/*.md \
+          "$_SANDBOX_TOOLING/inbox/$d"/.processing/*.md 2>/dev/null || true
+  done
+  : > "$_SANDBOX_TOOLING/logs/journal.jsonl"
+
+  export MMB_WORKER_TIMEOUT=10 MMB_COMMD_POLL_INTERVAL=3
+  _sandbox_start_commd
+
+  local s7_total=50
+  local s7_pids=()
+  for i in $(seq 1 "$s7_total"); do
+    _sandbox_send_msg core "burst-$(printf '%03d' $i)" "burst s7 msg $i" &
+    s7_pids+=("$!")
+  done
+  for p in "${s7_pids[@]}"; do
+    wait "$p" 2>/dev/null || true
+  done
+
+  elapsed=0
+  while (( elapsed < 120 )); do
+    local s7_term
+    s7_term=$(_count_files "$inbox_core/.done" "$inbox_core/.dead")
+    if [[ "$s7_term" -ge "$s7_total" ]]; then
+      break
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+
+  if [[ "$(_count_files "$inbox_core")" -eq 0 ]]; then
+    _pass "top-level zerado"
+  else
+    _fail "top-level=$(_count_files "$inbox_core") esperado 0 (elapsed=${elapsed}s)"
+  fi
+  local s7_done s7_dead
+  s7_done=$(_count_files "$inbox_core/.done")
+  s7_dead=$(_count_files "$inbox_core/.dead")
+  if [[ $((s7_done + s7_dead)) -eq "$s7_total" ]]; then
+    _pass "done+dead=$s7_total (done=$s7_done dead=$s7_dead)"
+  else
+    _fail "done+dead=$((s7_done+s7_dead)) esperado $s7_total"
+  fi
+
+  local jpath="$_SANDBOX_TOOLING/logs/journal.jsonl"
+  local claim_total claim_dups poll_count
+  claim_total=$(python3 -c "
+import json
+n=0
+for L in open('$jpath'):
+  try:
+    if json.loads(L).get('event')=='commd-claim': n+=1
+  except: pass
+print(n)
+")
+  claim_dups=$(python3 -c "
+import json, collections
+c=collections.Counter()
+for L in open('$jpath'):
+  try:
+    e=json.loads(L)
+    if e.get('event')=='commd-claim': c[e['file']]+=1
+  except: pass
+print(sum(1 for v in c.values() if v>1))
+")
+  poll_count=$(python3 -c "
+import json
+n=0
+for L in open('$jpath'):
+  try:
+    if json.loads(L).get('event')=='commd-poll-recovered': n+=1
+  except: pass
+print(n)
+")
+  if [[ "$claim_total" -eq "$s7_total" ]]; then
+    _pass "commd-claim total=$s7_total"
+  else
+    _fail "commd-claim total=$claim_total esperado $s7_total"
+  fi
+  if [[ "$claim_dups" -eq 0 ]]; then
+    _pass "zero double-claim"
+  else
+    _fail "double-claim count=$claim_dups"
+  fi
+  # poll-recovered é informativo: depende de inotify ter dropado eventos
+  echo "  (info) commd-poll-recovered=$poll_count (não obrigatório >0)"
+
+  "$_SANDBOX_TOOLING/bin/commd.sh" stop >/dev/null 2>&1 || true
+  sleep 1
+  _SANDBOX_COMMD_PID=""
+  unset MMB_WORKER_TIMEOUT MMB_COMMD_POLL_INTERVAL
+
   # TODO S2: volume distribuído com validação de paralelismo
   # TODO S3: mistura success/error/timeout por nome de arquivo
   # TODO S4: restart no meio do volume (stop + drain + continuação)
@@ -1047,10 +1311,98 @@ cmd_stress() {
   trap - EXIT
 }
 
+# ──────────────────────────────────────────────────────────────────
+# cmd_bridge: B1 — unit test inline das regexes do aquario-bridge.
+# Sem sandbox, sem venv: stub do módulo websockets antes de importar
+# o aquario-bridge.py via importlib. Instancia Bridge com uma fake
+# queue e injeta as 3 strings reais que worker.sh emite.
+# ──────────────────────────────────────────────────────────────────
+cmd_bridge() {
+  echo "================================================================"
+  echo " SMOKE — bridge (unit test das regexes do aquario-bridge)"
+  echo "================================================================"
+
+  python3 - "$TOOLING_DIR/bin/aquario-bridge.py" <<'PYEOF'
+import sys, types, importlib.util
+sys.dont_write_bytecode = True  # evita __pycache__/ ao lado do bridge
+
+bridge_path = sys.argv[1]
+
+# Stub do módulo websockets — bridge faz `import websockets` no topo,
+# mas Bridge.__init__ não usa, então tipos vazios bastam.
+ws = types.ModuleType("websockets")
+ws_ex = types.ModuleType("websockets.exceptions")
+class _CC(Exception): pass
+ws_ex.ConnectionClosed = _CC
+ws.exceptions = ws_ex
+sys.modules["websockets"] = ws
+sys.modules["websockets.exceptions"] = ws_ex
+
+spec = importlib.util.spec_from_file_location("ab", bridge_path)
+ab = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(ab)
+
+events = []
+class FakeQueue:
+    def put_nowait(self, item):
+        events.append(item)
+
+bridge = ab.Bridge(FakeQueue())
+
+# Cada cenário precisa do header de pid antes da linha terminal:
+# Bridge.on_worker_log_line() só emite 'born' ao parsear pid header,
+# e _finish_worker() faz FIFO pop por dest.
+cases = [
+    ("core",     "[ts] worker core pid=11111"),
+    ("core",     "[ts] worker core DONE"),
+    ("cockpit",  "[ts] worker cockpit pid=22222"),
+    ("cockpit",  "[ts] worker cockpit TIMEOUT after 120s"),
+    ("aquarium", "[ts] worker aquarium pid=33333"),
+    ("aquarium", "[ts] worker aquarium EXIT=2"),
+]
+for dest, line in cases:
+    bridge.on_worker_log_line(dest, line)
+
+expected = [
+    ("born",          "worker-core-11111"),
+    ("died_happy",    "worker-core-11111"),
+    ("born",          "worker-cockpit-22222"),
+    ("died_defeated", "worker-cockpit-22222"),
+    ("born",          "worker-aquarium-33333"),
+    ("died_defeated", "worker-aquarium-33333"),
+]
+
+fails = []
+for i, (kind, wid) in enumerate(expected):
+    if i >= len(events):
+        fails.append(f"event #{i} ausente (esperado kind={kind} id={wid})")
+        continue
+    e = events[i]
+    if e.get("kind") != kind:
+        fails.append(f"event #{i}: kind={e.get('kind')!r} esperado {kind!r}")
+    if e.get("id") != wid:
+        fails.append(f"event #{i}: id={e.get('id')!r} esperado {wid!r}")
+
+if fails:
+    for f in fails:
+        print(f"  FAIL: {f}")
+    sys.exit(1)
+
+print("  ✓ DONE → died_happy")
+print("  ✓ TIMEOUT after Ns → died_defeated")
+print("  ✓ EXIT=N → died_defeated")
+print(f"  ✓ 6/6 eventos emitidos com kind+id corretos")
+PYEOF
+
+  echo
+  echo "=== BRIDGE PASS ==="
+}
+
 cmd_hardening() {
-  echo "=== HARDENING: light + medium ==="
+  echo "=== HARDENING: light + medium + bridge ==="
   cmd_light
   cmd_medium
+  cmd_bridge
   echo "=== HARDENING PASS ==="
 }
 
@@ -1058,15 +1410,17 @@ case "$MODE" in
   light)           cmd_light ;;
   medium)          cmd_medium ;;
   stress)          cmd_stress ;;
+  bridge)          cmd_bridge ;;
   hardening)       cmd_hardening ;;
   comm|"")         cmd_comm ;;
   aquario)         cmd_aquario ;;
   *)
-    echo "Uso: $0 [light|medium|stress|hardening|comm|aquario]" >&2
+    echo "Uso: $0 [light|medium|stress|bridge|hardening|comm|aquario]" >&2
     echo "  light      — sandbox isolado, mock claude, validação C1-C6 (rápido)" >&2
     echo "  medium     — sandbox isolado, falhas controladas e recovery" >&2
     echo "  stress     — sandbox isolado, volume e concorrência (demorado)" >&2
-    echo "  hardening  — light + medium (CI/validação pré-push)" >&2
+    echo "  bridge     — unit test das regexes do aquario-bridge (sem sandbox)" >&2
+    echo "  hardening  — light + medium + bridge (CI/validação pré-push)" >&2
     echo "  comm       — canal ponta-a-ponta (requer commd vivo + claude real)" >&2
     echo "  aquario    — canal + bridge WS (requer bridge + relay)" >&2
     exit 1
