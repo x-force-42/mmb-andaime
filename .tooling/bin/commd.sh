@@ -185,21 +185,35 @@ run_foreground() {
     exit 1
   fi
 
-  # Pid file + cleanup
-  if [ -f "$PID_FILE" ]; then
-    local old_pid
-    old_pid=$(cat "$PID_FILE")
-    if kill -0 "$old_pid" 2>/dev/null; then
-      echo "ERRO: commd já está rodando (pid=$old_pid). Use 'commd.sh stop' antes." >&2
-      exit 1
-    fi
-    rm -f "$PID_FILE"
+  # Single-instance via flock em fd persistente no próprio pid file.
+  # O lock vive no fd 200 enquanto o daemon roda; kernel libera no
+  # fechamento do fd em qualquer morte (TERM/KILL/OOM/segfault). Isso
+  # elimina:
+  #   (a) stale pid file — importa quem segura o lock, não o conteúdo
+  #   (b) pid recycling fooling-around — não dependemos de kill -0 pid
+  #   (c) simultaneous start race — flock -n é atômico no kernel
+  # `>>` abre sem truncar: protege o conteúdo caso outro daemon já
+  # segure o lock e o nosso open chegue primeiro só pra falhar no flock.
+  exec 200>>"$PID_FILE"
+  if ! flock -n 200; then
+    existing=$(cat "$PID_FILE" 2>/dev/null || echo "?")
+    echo "ERRO: commd já está rodando (pid=$existing). Use 'commd.sh stop' antes." >&2
+    exit 1
   fi
+  # Lock adquirido: agora seguro sobrescrever o pid file com o nosso pid.
   echo $$ > "$PID_FILE"
 
   cleanup() {
-    log "shutdown: limpando pid file"
+    trap '' EXIT INT TERM  # re-entrancy: 2º sinal durante o handler
+    log "shutdown..."
+    # Mata workers em background (subshells com flock). Mensagens em
+    # curso ficam em .processing/ e drain do próximo start retoma.
+    # inotifywait não aparece em `jobs -p` (process substitution) —
+    # morre via SIGPIPE quando o fd da read pipe fecha no exit.
+    jobs -p | xargs -r kill 2>/dev/null || true
+    exec 200>&- 2>/dev/null || true
     rm -f "$PID_FILE"
+    exit 0
   }
   trap cleanup EXIT INT TERM
 
