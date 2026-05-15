@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mmb — testes & verificações do andaime</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-elev: #161922;
+    --bg-code: #0a0c11;
+    --fg: #e6e7ea;
+    --fg-dim: #9aa0aa;
+    --fg-faint: #5e6573;
+    --accent: #7cc4ff;
+    --accent-2: #a78bfa;
+    --green: #4ade80;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --border: #242833;
+    --border-soft: #1c2029;
+    --kbd-bg: #1f2330;
+    --maxw: 880px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafbfc;
+      --bg-elev: #ffffff;
+      --bg-code: #f4f5f7;
+      --fg: #1c1f26;
+      --fg-dim: #4a5260;
+      --fg-faint: #8a93a3;
+      --accent: #0969da;
+      --accent-2: #6f42c1;
+      --green: #1a7f37;
+      --yellow: #9a6700;
+      --red: #cf222e;
+      --border: #d8dde3;
+      --border-soft: #e6eaf0;
+      --kbd-bg: #eef0f4;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: 100vh;
+  }
+  nav.toc {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 24px 20px;
+    border-right: 1px solid var(--border);
+    background: var(--bg-elev);
+    font-size: 14px;
+  }
+  nav.toc h2 {
+    margin: 0 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-dim);
+  }
+  nav.toc ul {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 18px;
+  }
+  nav.toc li { margin: 2px 0; }
+  nav.toc a {
+    color: var(--fg-dim);
+    text-decoration: none;
+    display: block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border-left: 2px solid transparent;
+  }
+  nav.toc a:hover {
+    color: var(--fg);
+    background: var(--bg-code);
+    border-left-color: var(--accent);
+  }
+  nav.toc a.cmd { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  main {
+    padding: 48px 56px 96px;
+    max-width: var(--maxw);
+  }
+  header.hero {
+    margin-bottom: 56px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  header.hero .eyebrow {
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+  header.hero h1 {
+    font-size: 40px;
+    margin: 0 0 12px;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+  header.hero h1 code {
+    color: var(--accent-2);
+    font-size: inherit;
+    background: none;
+    padding: 0;
+  }
+  header.hero p.lede {
+    font-size: 18px;
+    color: var(--fg-dim);
+    margin: 0 0 24px;
+    max-width: 640px;
+  }
+  .pill-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  .pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    background: var(--bg-elev);
+  }
+  .pill.ok    { color: var(--green);  border-color: var(--green);  }
+  .pill.warn  { color: var(--yellow); border-color: var(--yellow); }
+  .pill.bad   { color: var(--red);    border-color: var(--red);    }
+
+  h2 {
+    font-size: 26px;
+    margin: 56px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-soft);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  h3 {
+    font-size: 19px;
+    margin: 32px 0 10px;
+    font-weight: 600;
+  }
+  h4 {
+    font-size: 14px;
+    margin: 18px 0 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-dim);
+    font-weight: 600;
+  }
+  p { margin: 12px 0; }
+  a { color: var(--accent); }
+  ul, ol { padding-left: 22px; }
+  li { margin: 4px 0; }
+
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.92em;
+    background: var(--bg-code);
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border-soft);
+  }
+  pre {
+    background: var(--bg-code);
+    padding: 14px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border-soft);
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 12px 0;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  pre .c-prompt { color: var(--fg-faint); user-select: none; }
+  pre .c-cmd    { color: var(--accent); }
+  pre .c-arg    { color: var(--fg); }
+  pre .c-flag   { color: var(--accent-2); }
+  pre .c-cmt    { color: var(--fg-faint); font-style: italic; }
+  pre .c-ok     { color: var(--green); }
+  pre .c-warn   { color: var(--yellow); }
+  pre .c-bad    { color: var(--red); }
+  pre .c-dim    { color: var(--fg-faint); }
+  pre .c-bold   { font-weight: 700; }
+
+  kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.85em;
+    background: var(--kbd-bg);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+  }
+
+  .cmd-block {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 18px 0;
+  }
+  .cmd-block .synopsis {
+    font-family: ui-monospace, monospace;
+    font-size: 14px;
+    color: var(--fg);
+    background: var(--bg-code);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-soft);
+    margin: 0 0 12px;
+  }
+  .cmd-block .synopsis .arg { color: var(--accent); }
+  .cmd-block .synopsis .opt { color: var(--fg-dim); }
+  .cmd-block h3 { margin-top: 0; }
+
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--bg-elev);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 14px;
+  }
+  .callout.warn { border-left-color: var(--yellow); }
+  .callout.bad  { border-left-color: var(--red); }
+  .callout.ok   { border-left-color: var(--green); }
+  .callout p:first-child { margin-top: 0; }
+  .callout p:last-child  { margin-bottom: 0; }
+  .callout .label {
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-right: 6px;
+  }
+  .callout.warn .label { color: var(--yellow); }
+  .callout.bad  .label { color: var(--red);    }
+  .callout.ok   .label { color: var(--green);  }
+  .callout      .label { color: var(--accent); }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+  }
+  th {
+    font-weight: 600;
+    color: var(--fg-dim);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  td code { white-space: nowrap; }
+
+  .grid-two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 16px 0;
+  }
+  .card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .card h4 { margin: 0 0 6px; }
+  .card p  { margin: 0; font-size: 14px; color: var(--fg-dim); }
+
+  .legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--fg-dim);
+    margin-right: 14px;
+  }
+  .legend .dot {
+    width: 10px; height: 10px; border-radius: 999px;
+    display: inline-block;
+  }
+  .legend .dot.free { background: var(--green); }
+  .legend .dot.cheap { background: var(--yellow); }
+  .legend .dot.real  { background: var(--red); }
+
+  @media (max-width: 880px) {
+    body { grid-template-columns: 1fr; }
+    nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    main { padding: 32px 24px 64px; }
+    .grid-two { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="toc">
+  <h2>Sumário</h2>
+  <ul>
+    <li><a href="#intro">Visão geral</a></li>
+    <li><a href="#quickstart">Início rápido</a></li>
+    <li><a href="#decision">Quando rodar o quê</a></li>
+    <li><a href="#cost">Tiers de custo</a></li>
+  </ul>
+  <h2>Suite formal</h2>
+  <ul>
+    <li><a class="cmd" href="#smoke">smoke.sh</a></li>
+    <li><a class="cmd" href="#smoke-light">smoke light</a></li>
+    <li><a class="cmd" href="#smoke-medium">smoke medium</a></li>
+    <li><a class="cmd" href="#smoke-stress">smoke stress</a></li>
+    <li><a class="cmd" href="#smoke-bridge">smoke bridge</a></li>
+    <li><a class="cmd" href="#smoke-hardening">smoke hardening</a></li>
+    <li><a class="cmd" href="#smoke-comm">smoke comm</a></li>
+    <li><a class="cmd" href="#smoke-aquario">smoke aquario</a></li>
+  </ul>
+  <h2>Inspeção</h2>
+  <ul>
+    <li><a class="cmd" href="#mmb">mmb (CLI)</a></li>
+    <li><a class="cmd" href="#mmb-preflight">mmb preflight</a></li>
+    <li><a class="cmd" href="#mmb-doctor">mmb doctor</a></li>
+    <li><a class="cmd" href="#mmb-status">mmb status / diag</a></li>
+  </ul>
+  <h2>Sanitização</h2>
+  <ul>
+    <li><a class="cmd" href="#reset-all">reset-all.sh</a></li>
+    <li><a class="cmd" href="#mmb-cleanup">mmb cleanup</a></li>
+    <li><a href="#skill-reset">skill <code>/mmb-reset</code></a></li>
+  </ul>
+  <h2>Verificação operacional</h2>
+  <ul>
+    <li><a class="cmd" href="#check-deps">check-deps.sh</a></li>
+    <li><a class="cmd" href="#review-cycle">review-cycle.sh</a></li>
+    <li><a class="cmd" href="#log-sh">log.sh</a></li>
+    <li><a class="cmd" href="#agents-sh">agents.sh</a></li>
+  </ul>
+  <h2>Referência</h2>
+  <ul>
+    <li><a href="#guardrails">Guardrails em scripts</a></li>
+    <li><a href="#bug-coverage">Cobertura de bugs</a></li>
+    <li><a href="#gaps">Gaps conhecidos</a></li>
+  </ul>
+</nav>
+
+<main>
+
+<header class="hero">
+  <div class="eyebrow">Andaime MMB · testes &amp; verificações</div>
+  <h1><code>smoke</code> + <code>mmb</code> — o que tem pra testar</h1>
+  <p class="lede">Inventário completo das ferramentas de teste, verificação e sanitização do andaime. O que cada uma faz, quando rodar, e como combiná-las em cenários canônicos.</p>
+  <div class="pill-row">
+    <span class="pill">7 modos de smoke</span>
+    <span class="pill">9 subcomandos de inspeção</span>
+    <span class="pill ok">5 modos gratuitos</span>
+    <span class="pill warn">2 modos custam tokens</span>
+  </div>
+</header>
+
+<section id="intro">
+  <h2>Visão geral</h2>
+  <p>O andaime MMB tem três camadas de validação. Esta página inventaria todas. A documentação detalhada da CLI de inspeção (<code>mmb</code>) vive em <a href="mmb-cli.html"><code>mmb-cli.html</code></a> — aqui só citamos os subcomandos relevantes pra testes.</p>
+
+  <div class="grid-two">
+    <div class="card">
+      <h4 style="color: var(--green)">1. Suite formal — <code>smoke.sh</code></h4>
+      <p>7 modos. Os 4 primeiros rodam em sandbox isolado (<code>/tmp/mmb-smoke-XXX</code>) com mock do <code>claude</code> — gratuitos, idempotentes, idealmente <strong>todos verdes</strong> antes de qualquer mudança em <code>commd</code>/<code>worker</code>/<code>msg</code>.</p>
+    </div>
+    <div class="card">
+      <h4 style="color: var(--accent)">2. Inspeção — <code>mmb</code> CLI</h4>
+      <p>Read-only. <code>preflight</code> e <code>doctor</code> são as portas de entrada antes de subir; <code>status</code>, <code>logs</code>, <code>journal</code>, <code>inbox</code> são pra observação em runtime.</p>
+    </div>
+    <div class="card">
+      <h4 style="color: var(--yellow)">3. Sanitização — <code>reset-all.sh</code></h4>
+      <p>Reset destrutivo do estado em-voo (3 repos + mensageria). Sempre tem <code>--dry-run</code> como modo de verificação. Também vive como skill <code>/mmb-reset</code>.</p>
+    </div>
+    <div class="card">
+      <h4 style="color: var(--accent-2)">4. Guardrails embutidos</h4>
+      <p>Cada script operacional (<code>msg.sh</code>, <code>commd.sh</code>, <code>worker.sh</code>) valida invariantes na hora. Não são testes — são checks defensivos que <em>se</em> dispararem indicam bug.</p>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart">
+  <h2>Início rápido</h2>
+  <h4>Os três comandos do dia a dia</h4>
+  <pre><span class="c-prompt">$</span> <span class="c-cmd">mmb</span> <span class="c-arg">doctor</span>                     <span class="c-cmt"># "tô pronto pra subir?" (preflight + smoke light)</span>
+<span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">smoke.sh</span> <span class="c-arg">hardening</span>  <span class="c-cmt"># gate antes de push (light + medium + bridge)</span>
+<span class="c-prompt">$</span> <span class="c-cmd">mmb</span> <span class="c-arg">status</span>                     <span class="c-cmt"># onde está o estranho? (snapshot de uma tela)</span></pre>
+
+  <h4>Antes de mudar algo em <code>commd.sh</code>/<code>worker.sh</code>/<code>msg.sh</code></h4>
+  <pre><span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">smoke.sh</span> <span class="c-arg">hardening</span>  <span class="c-cmt"># baseline verde</span>
+<span class="c-prompt">$</span> <span class="c-cmt"># edita arquivos…</span>
+<span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">smoke.sh</span> <span class="c-arg">hardening</span>  <span class="c-cmt"># confirma que nada quebrou</span>
+<span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">smoke.sh</span> <span class="c-arg">stress</span>     <span class="c-cmt"># só se mexeu na concorrência / flock / polling</span></pre>
+
+  <h4>Antes de release / pré-push crítico</h4>
+  <pre><span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">commd.sh</span> <span class="c-arg">fg</span> &amp;          <span class="c-cmt"># sobe daemon (em fast mode pra baratear)</span>
+<span class="c-prompt">$</span> MMB_MODE=fast .tooling/bin/<span class="c-cmd">smoke.sh</span> <span class="c-arg">comm</span>  <span class="c-cmt"># sanity-check com claude real (~$0.01)</span>
+<span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">commd.sh</span> <span class="c-arg">stop</span></pre>
+</section>
+
+<section id="decision">
+  <h2>Quando rodar o quê — decision matrix</h2>
+  <p>O fluxo correto depende do que você acabou de mexer e do quão arriscado é. Tabela ordenada por frequência de uso.</p>
+  <table>
+    <thead>
+      <tr><th>Situação</th><th>Comando recomendado</th><th>Custo</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Vou subir o andaime agora</td>
+        <td><code>mmb preflight</code></td>
+        <td><span class="pill ok">free</span></td>
+      </tr>
+      <tr>
+        <td>Vou subir + canário rápido</td>
+        <td><code>mmb doctor</code> <span class="c-cmt">(= preflight + smoke light)</span></td>
+        <td><span class="pill ok">free</span></td>
+      </tr>
+      <tr>
+        <td>Vou commitar mudança em <code>commd</code>/<code>worker</code>/<code>msg</code></td>
+        <td><code>smoke hardening</code></td>
+        <td><span class="pill ok">free</span></td>
+      </tr>
+      <tr>
+        <td>Mexi em concorrência, flock, polling, lifecycle de inbox</td>
+        <td><code>smoke hardening</code> + <code>smoke stress</code></td>
+        <td><span class="pill ok">free</span></td>
+      </tr>
+      <tr>
+        <td>Mexi no <code>aquario-bridge.py</code> (regex, parsing de log)</td>
+        <td><code>smoke bridge</code> (já incluso no hardening)</td>
+        <td><span class="pill ok">free</span></td>
+      </tr>
+      <tr>
+        <td>Quero ver o stack de mensageria <strong>de verdade</strong></td>
+        <td><code>smoke comm</code> (precisa <code>commd</code> vivo)</td>
+        <td><span class="pill warn">~$0.01</span></td>
+      </tr>
+      <tr>
+        <td>Quero ver a visualização aquário</td>
+        <td><code>smoke aquario</code> (bridge + relay vivos)</td>
+        <td><span class="pill warn">~$0.01</span></td>
+      </tr>
+      <tr>
+        <td>Estado em-voo parece estranho</td>
+        <td><code>mmb status</code> → <code>mmb inbox dead</code> → <code>mmb logs commd -n 100</code></td>
+        <td><span class="pill ok">free</span></td>
+      </tr>
+      <tr>
+        <td>Algo continua errado depois do diag acima</td>
+        <td><code>mmb journal --follow</code> em paralelo com tentativa de repro</td>
+        <td><span class="pill ok">free</span></td>
+      </tr>
+      <tr>
+        <td>Vou começar épico novo do zero</td>
+        <td><code>reset-all.sh --dry-run</code> → <code>reset-all.sh</code></td>
+        <td><span class="pill warn">destrutivo</span></td>
+      </tr>
+      <tr>
+        <td>Reset agressivo pós-aprendizado / smoke contaminou tudo</td>
+        <td>skill <code>/mmb-reset</code> (Claude Code, cobre 3 repos + mensageria)</td>
+        <td><span class="pill warn">destrutivo</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout"><p><span class="label">Regra geral</span>Quanto mais perto da camada de mensageria você mexeu, mais à direita da tabela você precisa ir. Mudou só perfil/template? <code>preflight</code> basta. Mudou flock/polling? Vai até <code>stress</code>. Mudou contrato com Claude (briefing)? Vai até <code>comm</code>.</p></div>
+</section>
+
+<section id="cost">
+  <h2>Tiers de custo</h2>
+  <p>Cada teste mexe em recursos diferentes. Saber o que cada um consome ajuda a escolher o batch certo.</p>
+  <p>
+    <span class="legend"><span class="dot free"></span>free — bash/python local</span>
+    <span class="legend"><span class="dot cheap"></span>cheap — claude Haiku (~$0.01)</span>
+    <span class="legend"><span class="dot real"></span>real — depende do que você fizer</span>
+  </p>
+  <table>
+    <thead>
+      <tr><th>Comando</th><th>Tempo típico</th><th>Toca FS real?</th><th>Toca rede?</th><th>Custa tokens?</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>smoke light</code></td><td>~5s</td><td>não (sandbox)</td><td>não</td><td>não</td></tr>
+      <tr><td><code>smoke medium</code></td><td>~22s</td><td>não (sandbox)</td><td>não</td><td>não</td></tr>
+      <tr><td><code>smoke stress</code></td><td>~70s</td><td>não (sandbox)</td><td>não</td><td>não</td></tr>
+      <tr><td><code>smoke bridge</code></td><td>&lt;1s</td><td>não</td><td>não</td><td>não</td></tr>
+      <tr><td><code>smoke hardening</code></td><td>~30s</td><td>não (sandbox)</td><td>não</td><td>não</td></tr>
+      <tr><td><code>smoke comm</code></td><td>~20s</td><td>sim (inbox real)</td><td>sim (claude)</td><td><span style="color:var(--yellow)">~$0.01 Haiku</span></td></tr>
+      <tr><td><code>smoke aquario</code></td><td>~30s</td><td>sim (inbox + WS)</td><td>sim (claude)</td><td><span style="color:var(--yellow)">~$0.01 Haiku</span></td></tr>
+      <tr><td><code>mmb preflight</code></td><td>~1s</td><td>lê só</td><td>local (<code>gh auth</code>)</td><td>não</td></tr>
+      <tr><td><code>mmb doctor</code></td><td>~6s</td><td>lê + sandbox</td><td>local</td><td>não</td></tr>
+      <tr><td><code>mmb status</code> / <code>logs</code> / <code>journal</code></td><td>&lt;1s</td><td>lê só</td><td>não</td><td>não</td></tr>
+      <tr><td><code>check-deps.sh</code></td><td>~2s/PR</td><td>não</td><td><strong>sim</strong> (gh api)</td><td>não</td></tr>
+      <tr><td><code>reset-all.sh --dry-run</code></td><td>~3s</td><td>lê só</td><td>local</td><td>não</td></tr>
+      <tr><td><code>reset-all.sh</code></td><td>~10s</td><td><strong>destrói</strong></td><td><strong>sim</strong> (gh)</td><td>não</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<h2 style="margin-top:72px">Suite formal — <code>smoke.sh</code></h2>
+
+<div class="cmd-block" id="smoke">
+  <h3><code>smoke.sh &lt;modo&gt;</code></h3>
+  <p class="synopsis">.tooling/bin/smoke.sh <span class="arg">{light|medium|stress|bridge|hardening|comm|aquario}</span></p>
+  <p>Canário único do andaime. Os modos <strong>sandbox</strong> (light/medium/stress/bridge/hardening) rodam num diretório temporário <code>/tmp/mmb-smoke-XXXXXX/</code> com cópias dos scripts e um mock do <code>claude</code> CLI — não tocam o andaime real. Os modos <strong>live</strong> (comm/aquario) batem no andaime real e custam tokens.</p>
+
+  <h4>Estrutura do sandbox (modos free)</h4>
+  <pre>/tmp/mmb-smoke-XXX/
+├── tooling/                    <span class="c-cmt"># TOOLING_DIR efetivo</span>
+│   ├── bin/{commd,worker,msg}.sh
+│   ├── config.sh
+│   ├── profiles/{master,project-orchestrator}.md
+│   ├── inbox/&lt;dest&gt;/{,.processing,.done,.dead}/
+│   ├── state/                  <span class="c-cmt"># commd.pid + worker-*.lock</span>
+│   └── logs/journal.jsonl + workers/&lt;dest&gt;.log
+├── mock-bin/claude             <span class="c-cmt"># controlado por $SANDBOX/mock-ctrl</span>
+├── mmb-{core,cockpit,aquarium} <span class="c-cmt"># stubs pra CWD do worker</span>
+└── tmp/                        <span class="c-cmt"># body files dos testes</span></pre>
+
+  <h4>Como o mock do <code>claude</code> funciona</h4>
+  <ul>
+    <li><code>$SANDBOX/mock-ctrl</code> <strong>ausente</strong>: imprime <code>$MOCK_CLAUDE_OUTPUT</code> e sai com <code>$MOCK_CLAUDE_EXIT</code>. Comportamento default → exit 0 (happy path).</li>
+    <li><code>$SANDBOX/mock-ctrl</code> <strong>presente</strong> (<code>touch</code>): roda <code>sleep 999</code> pra simular worker pendurado. Usado nos testes de timeout.</li>
+  </ul>
+
+  <h4>Subindo um <code>commd</code> dentro do sandbox</h4>
+  <p>O helper <code>_sandbox_start_commd</code> espera o pid file conter exatamente o PID do daemon recém-iniciado E que o processo esteja vivo. Isso evita race com pid file stale (testes M5/M6 dependem desse contrato).</p>
+</div>
+
+<div class="cmd-block" id="smoke-light">
+  <h3><code>smoke.sh light</code> — daemon lifecycle &amp; guardrails (L1–L6)</h3>
+  <p class="synopsis">.tooling/bin/smoke.sh light</p>
+  <p>O canário básico. Roda em ~5s, gratuito. Cobre que o daemon sobe, recusa segunda instância, e que o <code>msg.sh</code> guarda os invariantes mínimos.</p>
+  <table>
+    <thead><tr><th>Cenário</th><th>O que valida</th></tr></thead>
+    <tbody>
+      <tr><td><code>L1</code> daemon lifecycle</td><td><code>commd fg</code> sobe, <code>status</code> reporta RUNNING, <code>stop</code> remove pid file, processo morre.</td></tr>
+      <tr><td><code>L2</code> msg.sh recusa sem commd</td><td>Sem daemon vivo, <code>msg.sh</code> sai com <code>exit 12</code> e não grava arquivo (evita enqueue fantasma).</td></tr>
+      <tr><td><code>L3</code> --allow-offline grava</td><td>Com a flag, <code>msg.sh</code> grava mesmo sem daemon e emite <code>AVISO</code> no stderr.</td></tr>
+      <tr><td><code>L4</code> fluxo feliz</td><td>Briefing pra core → <code>.done</code>; <code>.processing</code> e <code>.dead</code> vazios; journal tem <code>commd-dispatch</code>, <code>commd-claim</code>, <code>commd-done</code>.</td></tr>
+      <tr><td><code>L5</code> segunda instância recusada</td><td>Tentar subir outro <code>commd fg</code> falha (<code>flock</code> + mensagem "já está rodando").</td></tr>
+      <tr><td><code>L6</code> <code>MMB_COMMD_POLL_INTERVAL=0</code></td><td>Escape hatch: log indica "poll: desabilitado" e happy path continua funcionando.</td></tr>
+    </tbody>
+  </table>
+  <div class="callout ok"><p><span class="label">use quando</span>Mudou qualquer coisa em <code>msg.sh</code>, no lifecycle do <code>commd</code>, ou em <code>config.sh</code>. Esse é o gate mínimo.</p></div>
+</div>
+
+<div class="cmd-block" id="smoke-medium">
+  <h3><code>smoke.sh medium</code> — falhas controladas &amp; recovery (M1–M7)</h3>
+  <p class="synopsis">.tooling/bin/smoke.sh medium</p>
+  <p>Roda em ~22s. Simula timeout, crash, pid file stale e perda de eventos do inotify. Cada cenário começa de inbox limpo.</p>
+  <table>
+    <thead><tr><th>Cenário</th><th>O que valida</th></tr></thead>
+    <tbody>
+      <tr><td><code>M1</code> timeout do worker</td><td>Com <code>mock-ctrl</code> + <code>MMB_WORKER_TIMEOUT=3</code>: mensagem vai pra <code>.dead</code>, journal tem <code>commd-dead</code> e <code>commd-worker-timeout</code>.</td></tr>
+      <tr><td><code>M2</code> recovery após timeout</td><td>Após M1, removendo <code>mock-ctrl</code>: nova mensagem completa o pipeline normalmente.</td></tr>
+      <tr><td><code>M3</code> drain de órfão em <code>.processing/</code></td><td>Arquivo injetado em <code>.processing/</code> ANTES do commd subir: drain inicial retoma e leva pra <code>.done</code>.</td></tr>
+      <tr><td><code>M4</code> SIGTERM em voo</td><td><code>kill</code> no commd com worker rodando: arquivo permanece em <code>.processing/</code>, drain do próximo start retoma.</td></tr>
+      <tr><td><code>M5</code> pid file com PID morto</td><td>Pid file aponta pra processo inexistente: novo commd sobe normalmente e sobrescreve.</td></tr>
+      <tr><td><code>M6</code> pid file com PID vivo mas lock livre</td><td>Pid file aponta pra processo qualquer (parasita), mas <code>flock</code> está livre: novo commd sobe (decide pelo lock, não pelo pid).</td></tr>
+      <tr><td><code>M7</code> <code>commd-poll-recovered</code> em runtime</td><td><code>SIGSTOP</code> no inotifywait → 5 msgs no top-level → sleep 2× poll interval → <code>SIGCONT</code>. Poll recupera tudo, zero double-claim.</td></tr>
+    </tbody>
+  </table>
+  <div class="callout ok"><p><span class="label">use quando</span>Mexeu em timeout do worker, trap/cleanup do commd, lifecycle <code>.processing → .done/.dead</code>, ou polling. M7 é o teste do <strong>safety net contra inotify-drop em WSL2</strong>.</p></div>
+</div>
+
+<div class="cmd-block" id="smoke-stress">
+  <h3><code>smoke.sh stress</code> — volume &amp; concorrência (S1, S6, S7)</h3>
+  <p class="synopsis">.tooling/bin/smoke.sh stress</p>
+  <p>Roda em ~70s. Joga volume sequencial e paralelo no daemon.</p>
+  <table>
+    <thead><tr><th>Cenário</th><th>O que valida</th></tr></thead>
+    <tbody>
+      <tr><td><code>S1</code> volume sequencial</td><td>100 mensagens enviadas em loop pra <code>core</code>: todas terminam em <code>.done</code>, zero em <code>.dead</code>.</td></tr>
+      <tr><td><code>S6</code> concorrência de produtores</td><td>20 mensagens distribuídas entre 4 dests em paralelo: zero colisão de paths; após restart, drain leva tudo pra estado terminal.</td></tr>
+      <tr><td><code>S7</code> burst paralelo com poll</td><td>50 mensagens pra <code>core</code> com <code>MMB_COMMD_POLL_INTERVAL=3</code>: top-level zera, <code>commd-claim</code> total = 50, zero double-claim. <code>poll-recovered</code> é <strong>informativo</strong>, não obrigatório (depende de inotify dropar).</td></tr>
+    </tbody>
+  </table>
+  <div class="callout ok"><p><span class="label">use quando</span>Mexeu em concorrência, flock, claim atômica via mv, polling, ou qualquer coisa que possa criar race entre inotify e poll.</p></div>
+  <h4>TODOs herdados (não cobertos)</h4>
+  <ul>
+    <li><code>S2</code>: volume distribuído com validação de paralelismo entre dests.</li>
+    <li><code>S3</code>: mistura success/error/timeout decidida por nome de arquivo.</li>
+    <li><code>S4</code>: restart no meio do volume (stop + drain + continuação).</li>
+    <li><code>S5</code>: start/stop repetido N ciclos sem pid órfão.</li>
+  </ul>
+</div>
+
+<div class="cmd-block" id="smoke-bridge">
+  <h3><code>smoke.sh bridge</code> — unit das regexes do aquario-bridge (B1)</h3>
+  <p class="synopsis">.tooling/bin/smoke.sh bridge</p>
+  <p>Roda em &lt;1s. Carrega <code>aquario-bridge.py</code> via <code>importlib</code> (com <code>websockets</code> stubado por <code>types.ModuleType</code>), instancia <code>Bridge</code> com uma fila fake, e injeta as 3 strings reais que <code>worker.sh</code> emite. Sem sandbox, sem venv, sem WebSocket.</p>
+  <table>
+    <thead><tr><th>Linha do worker.log</th><th>Kind esperado</th></tr></thead>
+    <tbody>
+      <tr><td><code>[ts] worker core DONE</code></td><td><code>died_happy</code></td></tr>
+      <tr><td><code>[ts] worker core TIMEOUT after 120s</code></td><td><code>died_defeated</code></td></tr>
+      <tr><td><code>[ts] worker core EXIT=2</code></td><td><code>died_defeated</code></td></tr>
+    </tbody>
+  </table>
+  <div class="callout ok"><p><span class="label">use quando</span>Mudou alguma regex em <code>aquario-bridge.py</code>, ou o formato das linhas terminais do <code>worker.sh</code>.</p></div>
+  <p><strong>Origem:</strong> nasceu junto com o fix do Bug C (<code>fix(aquario-bridge): timeout de worker vira died_defeated</code>) pra ter cobertura unit barata sem precisar do venv do bridge.</p>
+</div>
+
+<div class="cmd-block" id="smoke-hardening">
+  <h3><code>smoke.sh hardening</code> — CI gate (light + medium + bridge)</h3>
+  <p class="synopsis">.tooling/bin/smoke.sh hardening</p>
+  <p>Roda em ~30s. <strong>É o gate canônico pré-push pra mudanças em mensageria.</strong> Inclui:</p>
+  <ul>
+    <li>Tudo de <code>light</code> (L1–L6) — 6 cenários, ~5s</li>
+    <li>Tudo de <code>medium</code> (M1–M7) — 7 cenários, ~22s</li>
+    <li>Tudo de <code>bridge</code> (B1) — unit regex, &lt;1s</li>
+  </ul>
+  <p>Não inclui <code>stress</code> porque é mais demorado e cobre superfície sobrepondo o que light/medium já garantem. Mas <strong>se mexeu em concorrência, rode stress também.</strong></p>
+  <div class="callout"><p><span class="label">racional</span><code>hardening</code> tem que ser barato o suficiente pra você rodar antes de cada commit que toca <code>commd.sh</code>/<code>worker.sh</code>/<code>msg.sh</code>/<code>config.sh</code>/<code>aquario-bridge.py</code> — ~30s é o teto aceitável pra ser rotina.</p></div>
+</div>
+
+<div class="cmd-block" id="smoke-comm">
+  <h3><code>smoke.sh comm</code> — E2E real com claude (C)</h3>
+  <p class="synopsis">.tooling/bin/smoke.sh comm <span class="c-cmt"># (alias: smoke.sh sem args)</span></p>
+  <p>Custa tokens (~$0.01 em fast mode com Haiku). Requer <code>commd</code> vivo no andaime real. Dispara um briefing trivial pra <code>core</code> e espera o status de volta em <code>inbox/master/</code>.</p>
+  <h4>Fluxo</h4>
+  <ol>
+    <li>Verifica <code>state/commd.pid</code> vivo (se não, <strong>exit 2</strong> com instruções pra subir).</li>
+    <li>Gera briefing em <code>.tooling/intents/&lt;ts&gt;-smoke/master-briefing.md</code>.</li>
+    <li><code>msg.sh master → core</code> com o briefing.</li>
+    <li>Polla a cada 2s por até 90s, buscando arquivo <code>*smoke-comm-ok*</code> no <code>inbox/master/</code> + <code>.processing/</code> + <code>.done/</code> + <code>.dead/</code> com <code>-newer "$brief"</code>.</li>
+    <li>Em FAIL, faz dump de <code>commd.log</code> e <code>workers/core.log</code>.</li>
+  </ol>
+  <h4>Por que olha em <code>.processing</code>/<code>.done</code>/<code>.dead</code> também</h4>
+  <p>O master é um worker stateless também: quando a resposta do core chega em <code>inbox/master/</code>, o próprio commd dispara worker pra master imediatamente. O arquivo passa rápido por top-level → <code>.processing</code> → <code>.done</code>. Olhar só top-level dá <strong>falso-negativo</strong> em runs reais; o <code>-newer "$brief"</code> elimina falso-positivo com history antigo.</p>
+  <div class="callout warn"><p><span class="label">cost gate</span>Use SÓ depois de <code>smoke hardening</code> verde. Não vale gastar token pra debugar um problema que o sandbox pegaria.</p></div>
+  <h4>Sugestão de uso</h4>
+  <pre><span class="c-prompt">$</span> MMB_MODE=fast .tooling/bin/<span class="c-cmd">commd.sh</span> <span class="c-arg">fg</span> &amp;
+<span class="c-prompt">$</span> sleep 3
+<span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">smoke.sh</span> <span class="c-arg">comm</span>
+<span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">commd.sh</span> <span class="c-arg">stop</span></pre>
+</div>
+
+<div class="cmd-block" id="smoke-aquario">
+  <h3><code>smoke.sh aquario</code> — E2E com bridge WS (A)</h3>
+  <p class="synopsis">.tooling/bin/smoke.sh aquario</p>
+  <p>Custa tokens. Adicional sobre <code>comm</code>: também valida que o <code>aquario-bridge.py</code> está republicando os eventos no relay WebSocket.</p>
+  <h4>Pré-requisitos</h4>
+  <ul>
+    <li><code>commd</code> vivo (idem <code>comm</code>).</li>
+    <li><code>aquario-bridge.py</code> rodando — <code>.tooling/aquario-bridge/.venv/</code> precisa existir.</li>
+    <li>Relay WS escutando em <code>RELAY_URL</code> (default <code>ws://localhost:8080/ws</code>).</li>
+  </ul>
+  <h4>O que valida</h4>
+  <p>Spawna um listener Python efêmero conectado ao relay. Dispara briefing tipo <code>comm</code>. Espera receber um <code>{"type":"event","kind":"born","name":"[W] worker-…"}</code> em até 60s.</p>
+  <div class="callout warn"><p><span class="label">setup pesado</span>Se você só quer testar o canal de mensageria, use <code>comm</code>. Aquario só faz sentido quando você quer ver a visualização efetivamente reagir.</p></div>
+</div>
+
+<h2 style="margin-top:72px">Inspeção — <code>mmb</code> CLI</h2>
+<p>Documentação completa em <a href="mmb-cli.html"><code>mmb-cli.html</code></a>. Aqui só os subcomandos relevantes pra teste/verificação.</p>
+
+<div class="cmd-block" id="mmb">
+  <h3><code>mmb</code> — entrada única</h3>
+  <p class="synopsis">.tooling/bin/mmb <span class="opt">[--yes]</span> <span class="arg">&lt;subcommand&gt;</span> [args...]</p>
+  <p>Bash puro, sem deps além de <code>jq</code> opcional. Read-only por default — única exceção é <code>daemon stop</code> (com confirmação interativa).</p>
+</div>
+
+<div class="cmd-block" id="mmb-preflight">
+  <h3><code>mmb preflight</code> — diagnóstico pré-boot</h3>
+  <p class="synopsis">.tooling/bin/mmb preflight</p>
+  <p>Roda em ~1s. <strong>Não age</strong> — só reporta. Verifica:</p>
+  <ol>
+    <li>Deps críticas: <code>inotifywait</code>, <code>gh</code>, <code>tmux</code>, <code>git</code>, <code>claude</code>, <code>bash</code>.</li>
+    <li>Deps opcionais: <code>jq</code>, <code>python3</code>.</li>
+    <li><code>gh auth status</code>.</li>
+    <li>Single-instance: inspeciona pid file e lock sem segurar.</li>
+    <li>Postmortems em <code>inbox/*/.dead/</code>.</li>
+    <li>Branches <code>task/*</code> e <code>git status</code> sujo nos 3 repos.</li>
+  </ol>
+  <table>
+    <tr><td><code>exit 0</code></td><td><span class="pill ok">✓ pronto pra subir</span></td></tr>
+    <tr><td><code>exit 1</code></td><td><span class="pill warn">⚠ pode subir, com cuidado</span></td></tr>
+    <tr><td><code>exit 2</code></td><td><span class="pill bad">✗ não suba</span> (dep crítica ausente)</td></tr>
+  </table>
+</div>
+
+<div class="cmd-block" id="mmb-doctor">
+  <h3><code>mmb doctor</code> — preflight + smoke light</h3>
+  <p class="synopsis">.tooling/bin/mmb doctor</p>
+  <p>Roda em ~6s. Combina <code>preflight</code> + <code>smoke light</code> e dá um sumário ao final. É o "tô pronto pra subir?" canônico.</p>
+  <div class="callout"><p><span class="label">quando preferir <code>doctor</code> a só <code>preflight</code></span>Quando você quer não só checar config externa, mas também provar que o pipeline minimal de mensageria está consistente.</p></div>
+</div>
+
+<div class="cmd-block" id="mmb-status">
+  <h3><code>mmb status</code> / <code>logs</code> / <code>journal</code> / <code>inbox</code> — observação ao vivo</h3>
+  <p class="synopsis">.tooling/bin/mmb <span class="arg">{status|logs|journal|inbox}</span> [opts]</p>
+  <p>Toolbox pra investigar quando algo parece estranho.</p>
+  <table>
+    <thead><tr><th>Comando</th><th>O que mostra</th></tr></thead>
+    <tbody>
+      <tr><td><code>mmb status</code></td><td>Snapshot uma tela: commd RUNNING/STOPPED, contagem por inbox/lifecycle dir, branches task/* vivas, último evento do journal.</td></tr>
+      <tr><td><code>mmb inbox</code></td><td>Lista mensagens por dest (top-level).</td></tr>
+      <tr><td><code>mmb inbox dead</code></td><td>Lista postmortems — primeiro lugar pra olhar quando algo sumiu.</td></tr>
+      <tr><td><code>mmb logs commd -n 100</code></td><td>Últimas 100 linhas do daemon.</td></tr>
+      <tr><td><code>mmb logs core --follow</code></td><td>Tail ao vivo do worker do core.</td></tr>
+      <tr><td><code>mmb journal -n 30</code></td><td>Últimos 30 eventos estruturados (com <code>jq</code> se disponível).</td></tr>
+      <tr><td><code>mmb journal --follow</code></td><td>Tail ao vivo do journal — útil enquanto você tenta reproduzir.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2 style="margin-top:72px">Sanitização</h2>
+
+<div class="cmd-block" id="reset-all">
+  <h3><code>reset-all.sh</code> — reset destrutivo total</h3>
+  <p class="synopsis">.tooling/bin/reset-all.sh <span class="opt">[--dry-run]</span> <span class="opt">[--yes]</span> <span class="opt">[--no-archive]</span> <span class="opt">[--kill-claudes]</span></p>
+  <p>Limpa estado em-voo nos 3 repos + mensageria. Por padrão arquiva em <code>.tooling/archive/&lt;ts&gt;/</code> antes de deletar.</p>
+  <table>
+    <thead><tr><th>Flag</th><th>Efeito</th></tr></thead>
+    <tbody>
+      <tr><td><code>--dry-run</code></td><td>Lista o que faria sem executar. <strong>Sempre rode antes</strong> pra confirmar escopo.</td></tr>
+      <tr><td><code>--yes</code></td><td>Pula confirmação interativa.</td></tr>
+      <tr><td><code>--no-archive</code></td><td>Deleta direto sem arquivar (use só quando explicitamente pedido).</td></tr>
+      <tr><td><code>--kill-claudes</code></td><td>Encerra Claudes paralelos na sessão tmux <code>mmb</code> antes de começar.</td></tr>
+    </tbody>
+  </table>
+  <h4>O que reseta</h4>
+  <ul>
+    <li>PRs abertos com label <code>task</code> nos 3 repos (fecha sem merge).</li>
+    <li>Issues epic/task abertas.</li>
+    <li>Worktrees em <code>.worktrees/</code> de cada repo.</li>
+    <li>Branches locais e remotas <code>task/*</code>.</li>
+    <li><code>main</code> resetado pra <code>origin/main</code> em hard.</li>
+    <li>Mensageria: <code>inbox/</code>, <code>intents/</code>, <code>state/</code>, <code>journal.jsonl</code> arquivados.</li>
+  </ul>
+  <div class="callout bad"><p><span class="label">não rode sem --dry-run primeiro</span>O script é a fonte da verdade. Se quebrar, é diagnóstico pelo output, não leitura preventiva.</p></div>
+</div>
+
+<div class="cmd-block" id="mmb-cleanup">
+  <h3><code>mmb cleanup</code> — informativo</h3>
+  <p class="synopsis">.tooling/bin/mmb cleanup</p>
+  <p>NÃO executa. Apenas imprime as opções de cleanup com seus comandos exatos, pra você escolher e copiar.</p>
+</div>
+
+<div class="cmd-block" id="skill-reset">
+  <h3>Skill <code>/mmb-reset</code></h3>
+  <p>Variante "alto nível" no Claude Code: encapsula <code>reset-all.sh</code> dentro de uma skill com instruções claras (quando usar, o que esperar). Útil quando você quer que o agente faça o reset sem precisar lembrar das flags.</p>
+</div>
+
+<h2 style="margin-top:72px">Verificação operacional</h2>
+
+<div class="cmd-block" id="check-deps">
+  <h3><code>check-deps.sh</code> — dependências de tarefa</h3>
+  <p class="synopsis">.tooling/bin/check-deps.sh <span class="arg">&lt;repo&gt; &lt;task-id&gt; [issue-number]</span></p>
+  <p>Lê o body da sub-issue, extrai linhas <code>requires: #N</code>, consulta status de cada PR/issue via <code>gh</code>. <strong>Exit 0</strong> se todas mergeadas, <strong>1</strong> caso contrário. Usado pelo orq local antes de spawnar atômico de tarefa que tem dependência.</p>
+  <div class="callout"><p><span class="label">consome API</span>Faz <code>gh</code> calls — não rode em loop apertado.</p></div>
+</div>
+
+<div class="cmd-block" id="review-cycle">
+  <h3><code>review-cycle.sh</code> — agregador heurístico do journal</h3>
+  <p class="synopsis">.tooling/bin/review-cycle.sh <span class="arg">&lt;epic-slug&gt;</span></p>
+  <p>Roda no fim de um épico. Lê <code>logs/journal.jsonl</code>, filtra eventos por epic, lista <code>error</code>/<code>critical</code> sem <code>resolved</code> correspondente, propõe ações heurísticas. <strong>Não cria briefings, não dispara nada</strong> — só apresenta pro Rick decidir.</p>
+  <p>Eventos repetidos viram candidatos a virar guardrail novo.</p>
+</div>
+
+<div class="cmd-block" id="log-sh">
+  <h3><code>log.sh</code> — emit estruturado</h3>
+  <p class="synopsis">.tooling/bin/log.sh <span class="arg">&lt;sev&gt; &lt;event&gt; "&lt;msg&gt;"</span> <span class="opt">[--epic X]</span> <span class="opt">[--task Y]</span> <span class="opt">[--resolves &lt;id&gt;]</span></p>
+  <p>Append-only em <code>logs/journal.jsonl</code>. Filosofia: erro estruturado vai aqui, não em prosa solta. Workers e orquestradores são instruídos a chamar isso quando algo digno de nota acontece.</p>
+  <p>Em testes, é usado como mecanismo de assertion: smoke checa que o journal contém o evento esperado.</p>
+</div>
+
+<div class="cmd-block" id="agents-sh">
+  <h3><code>agents.sh</code> — registry de agentes</h3>
+  <p class="synopsis">.tooling/bin/agents.sh <span class="arg">{register|deregister|heartbeat|list}</span> [args...]</p>
+  <p>Estado vivo dos agentes (master, orqs, atômicos) em <code>state/agents.jsonl</code> + heartbeats em <code>state/heartbeats/&lt;id&gt;.alive</code> (mtime). À prova de race via <code>flock</code>.</p>
+  <p><strong>Estado: sem cobertura de smoke ainda.</strong> Próxima geração de testes (A1, A2 nos designs) cobre.</p>
+</div>
+
+<h2 style="margin-top:72px" id="guardrails">Guardrails embutidos em scripts</h2>
+<p>Não são testes — são checks defensivos que rodam <em>em produção</em>. Se algum disparar fora de teste, é sinal de bug.</p>
+
+<table>
+  <thead><tr><th>Script</th><th>Guardrail</th><th>Ação se violado</th></tr></thead>
+  <tbody>
+    <tr><td><code>msg.sh</code></td><td><code>to</code> ∈ {master,core,cockpit,aquarium}</td><td><code>exit 2</code></td></tr>
+    <tr><td><code>msg.sh</code></td><td><code>type</code> ∈ {briefing,question,answer,status,error}</td><td><code>exit 2</code></td></tr>
+    <tr><td><code>msg.sh</code></td><td><code>subject</code> kebab-case (2–62 chars)</td><td><code>exit 2</code></td></tr>
+    <tr><td><code>msg.sh</code></td><td><code>from ≠ to</code> (auto-mensagem)</td><td><code>exit 2</code></td></tr>
+    <tr><td><code>msg.sh</code></td><td>Body não-vazio</td><td><code>exit 2</code></td></tr>
+    <tr><td><code>msg.sh</code></td><td><code>commd</code> vivo (a menos de <code>--allow-offline</code>)</td><td><code>exit 12</code></td></tr>
+    <tr><td><code>commd.sh</code></td><td>Single-instance via <code>flock</code> no pid file</td><td><code>exit 1</code> com mensagem</td></tr>
+    <tr><td><code>commd.sh</code></td><td><code>inotifywait</code> instalado</td><td><code>exit 1</code></td></tr>
+    <tr><td><code>commd.sh</code></td><td>Path normalizado (<code>//</code> e leading-slash)</td><td>silencioso (fix)</td></tr>
+    <tr><td><code>commd.sh</code></td><td><code>dest</code> ∈ {master,core,cockpit,aquarium}</td><td><code>skip</code> + log</td></tr>
+    <tr><td><code>commd.sh</code></td><td>Idempotência via <code>mv</code> atômico no flock</td><td><code>claim FAILED</code> + log</td></tr>
+    <tr><td><code>worker.sh</code></td><td><code>timeout MMB_WORKER_TIMEOUT</code> com SIGTERM/SIGKILL</td><td><code>exit 124/137</code> → <code>.dead</code></td></tr>
+    <tr><td><code>worker.sh</code></td><td><code>DEST</code> e <code>INBOX_FILE</code> válidos</td><td><code>exit 1/2</code></td></tr>
+    <tr><td><code>task-start.sh</code></td><td>Worktree não existe ainda</td><td>aborta</td></tr>
+    <tr><td><code>task-end.sh</code></td><td>Branch mergeada (ou squash-merge detectada)</td><td>aborta se não</td></tr>
+    <tr><td><code>spawn-atomic.sh</code></td><td>Branch <code>task/*</code> sem dirty state</td><td>aborta</td></tr>
+    <tr><td><code>open-pr.sh</code></td><td>Push OK + gh disponível</td><td>aborta</td></tr>
+  </tbody>
+</table>
+
+<h2 style="margin-top:72px" id="bug-coverage">Cobertura dos bugs descobertos</h2>
+<p>Histórico dos bugs encontrados no caminho atual da mensageria e onde cada um é coberto.</p>
+<table>
+  <thead><tr><th>Bug</th><th>Sintoma</th><th>Fix</th><th>Coberto por</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Bug A v1</strong></td>
+      <td><code>//home/...</code> no path do inotify → <code>skip dest desconhecido</code></td>
+      <td><code>804b59a</code></td>
+      <td>indireto (sandbox não reproduz WSL2 quirk)</td>
+    </tr>
+    <tr>
+      <td><strong>Bug A v2</strong></td>
+      <td><code>home/...</code> sem leading slash → <code>dest=home</code></td>
+      <td><code>45f2977</code></td>
+      <td>dry-test inline + smoke comm real verde</td>
+    </tr>
+    <tr>
+      <td><strong>Bug B</strong></td>
+      <td>inotify dropa eventos sob burst em WSL2</td>
+      <td><code>8475c3f</code> (poll safety net)</td>
+      <td><code>smoke medium M7</code> (SIGSTOP em inotifywait) + <code>smoke stress S7</code> (burst paralelo)</td>
+    </tr>
+    <tr>
+      <td><strong>Bug C</strong></td>
+      <td><code>TIMEOUT after Ns</code> não vira <code>died_defeated</code> no aquário</td>
+      <td><code>deb7025</code></td>
+      <td><code>smoke bridge B1</code> (unit das 3 regexes)</td>
+    </tr>
+    <tr>
+      <td><strong>Bug smoke comm</strong></td>
+      <td>false-positive em <code>.done</code> + false-negative com master worker</td>
+      <td><code>51e8b51</code></td>
+      <td>dry-test do find inline + smoke comm real verde</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 style="margin-top:72px" id="gaps">Gaps conhecidos</h2>
+<p>O que ainda não tem cobertura:</p>
+<ul>
+  <li><strong>Camada atômica (<code>agents.sh</code> + <code>spawn-atomic.sh</code>)</strong>: spawn, heartbeat, deregister, detecção de zumbi. Designs A1/A2 propostos, não implementados.</li>
+  <li><strong>Fan-out cross-repo real (C3)</strong>: master → 3 orqs em paralelo com workers reais. Próxima etapa.</li>
+  <li><strong>Stress S2–S5</strong>: volume distribuído, mix de outcomes, restart em meio, start/stop repetido.</li>
+  <li><strong>Bridge → journal</strong>: refactor pra consumir só <code>journal.jsonl</code> (hoje tail dos workers logs também). Follow-up arquitetural.</li>
+  <li><strong>Smoke aquario</strong>: cobre só <code>born</code> de worker — não verifica <code>died_happy</code>/<code>died_defeated</code> chegando no relay. Cobertura parcial.</li>
+</ul>
+
+<div class="callout"><p><span class="label">heurística de evolução</span>Padrão se repetiu 3x do mesmo jeito → codifica. Não codifique antes — andaime ganha peso só onde paga custo.</p></div>
+
+<footer style="margin-top:96px; padding-top:24px; border-top:1px solid var(--border-soft); color: var(--fg-faint); font-size:13px;">
+  <p>Andaime MMB · documentação de testes &amp; verificações</p>
+  <p>Veja também: <a href="mmb-cli.html"><code>mmb-cli.html</code></a> · fontes em <a href="bin/smoke.sh"><code>.tooling/bin/smoke.sh</code></a> e <a href="bin/mmb"><code>.tooling/bin/mmb</code></a></p>
+</footer>
+
+</main>
+</body>
+</html>
