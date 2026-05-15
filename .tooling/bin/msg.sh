@@ -2,7 +2,7 @@
 # Envia mensagem entre agentes do MMB via mailbox FS.
 #
 # Uso:
-#   msg.sh <to> <type> <subject-slug> <body-file> [thread]
+#   msg.sh [--allow-offline] <to> <type> <subject-slug> <body-file> [thread]
 #
 #   <to>             master | core | cockpit | aquarium
 #   <type>           briefing | question | answer | status | error
@@ -11,9 +11,15 @@
 #                    (use "-" pra ler de stdin)
 #   [thread]         opcional — slug do épico/conversa pra correlação
 #
+# Flags:
+#   --allow-offline  grava mesmo se commd não estiver rodando
+#                    (default: falha com exit 12 — evita mensagem
+#                    fantasma). Também via MMB_ALLOW_OFFLINE_ENQUEUE=1.
+#
 # Comportamento:
-#   1. Lê o corpo da mensagem.
-#   2. Cria arquivo em .tooling/inbox/<to>/<timestamp>_<from>_<type>_<subject>.md
+#   1. Verifica que commd está vivo (ou --allow-offline).
+#   2. Lê o corpo da mensagem.
+#   3. Cria arquivo em .tooling/inbox/<to>/<timestamp>_<from>_<type>_<subject>.md
 #      com frontmatter (from/to/type/subject/thread/created).
 #
 # O wakeup do destinatário é responsabilidade do commd.sh (daemon
@@ -33,6 +39,19 @@ TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
 
+# Parsing de flags: --allow-offline em qualquer posição é extraído;
+# o restante vira positional. Env MMB_ALLOW_OFFLINE_ENQUEUE=1 também
+# liga o modo.
+ALLOW_OFFLINE="${MMB_ALLOW_OFFLINE_ENQUEUE:-0}"
+POSITIONAL=()
+for arg in "$@"; do
+  case "$arg" in
+    --allow-offline) ALLOW_OFFLINE=1 ;;
+    *)               POSITIONAL+=("$arg") ;;
+  esac
+done
+set -- "${POSITIONAL[@]:-}"
+
 TO="${1:-}"
 TYPE="${2:-}"
 SUBJECT="${3:-}"
@@ -41,13 +60,15 @@ THREAD="${5:-}"
 
 if [ -z "$TO" ] || [ -z "$TYPE" ] || [ -z "$SUBJECT" ] || [ -z "$BODY_FILE" ]; then
   cat >&2 <<EOF
-Uso: $0 <to> <type> <subject-slug> <body-file> [thread]
+Uso: $0 [--allow-offline] <to> <type> <subject-slug> <body-file> [thread]
 
-  to       : master | core | cockpit | aquarium
-  type     : briefing | question | answer | status | error
-  subject  : kebab-case curto
-  body     : caminho do arquivo (- pra stdin)
-  thread   : opcional, correlaciona mensagens
+  to             : master | core | cockpit | aquarium
+  type           : briefing | question | answer | status | error
+  subject        : kebab-case curto
+  body           : caminho do arquivo (- pra stdin)
+  thread         : opcional, correlaciona mensagens
+  --allow-offline: grava mesmo sem commd vivo (default: exit 12).
+                   também via MMB_ALLOW_OFFLINE_ENQUEUE=1.
 
 Exemplo:
   msg.sh core briefing cleanup-scripts .tooling/intents/2026-05-14-cleanup/briefing-core.md cleanup-scripts
@@ -101,6 +122,36 @@ if [ "$TYPE" = "briefing" ] && [ -z "$THREAD" ]; then
   echo "AVISO: briefing sem 'thread' — agregação por épico vai ficar manual." >&2
 fi
 
+# Commd-alive check ANTES da gravação. Mensagem fantasma (gravada
+# sem ninguém pra processar) levava a dispatch atrasado/perdido na
+# v0.3 — bloquear na origem evita a classe inteira.
+COMMD_PID_FILE="$TOOLING_DIR/state/commd.pid"
+commd_alive=0
+if [ -f "$COMMD_PID_FILE" ]; then
+  COMMD_PID=$(cat "$COMMD_PID_FILE" 2>/dev/null || echo "")
+  if [ -n "$COMMD_PID" ] && kill -0 "$COMMD_PID" 2>/dev/null; then
+    commd_alive=1
+  fi
+fi
+if [ "$commd_alive" -eq 0 ]; then
+  if [ "$ALLOW_OFFLINE" = "1" ]; then
+    echo "AVISO: commd não está rodando — gravando mensagem mesmo assim (--allow-offline)." >&2
+    echo "       Mensagem fica pendente até o daemon subir e drainar." >&2
+  else
+    cat >&2 <<EOF
+ERRO: commd não está rodando — mensagem NÃO gravada (evita enqueue fantasma).
+
+       Suba o daemon antes:
+         $TOOLING_DIR/bin/commd.sh fg
+
+       Ou force enqueue offline (raro — só se você for subir commd em seguida):
+         msg.sh --allow-offline ...
+         (ou MMB_ALLOW_OFFLINE_ENQUEUE=1 msg.sh ...)
+EOF
+    exit 12
+  fi
+fi
+
 # Lê body
 if [ "$BODY_FILE" = "-" ]; then
   BODY_CONTENT=$(cat)
@@ -152,18 +203,3 @@ LOCK="$INBOX_DIR/.lock"
 
 echo "✓ Mensagem gravada: $TARGET"
 echo "  Destinatário será acordado pelo commd.sh (daemon)."
-
-# Sanity check: avisa se commd não está rodando (sem bloquear).
-# commd.sh grava seu PID em state/commd.pid quando inicia.
-COMMD_PID_FILE="$TOOLING_DIR/state/commd.pid"
-if [ -f "$COMMD_PID_FILE" ]; then
-  COMMD_PID=$(cat "$COMMD_PID_FILE" 2>/dev/null || echo "")
-  if [ -n "$COMMD_PID" ] && ! kill -0 "$COMMD_PID" 2>/dev/null; then
-    echo "AVISO: commd.pid existe mas processo $COMMD_PID está morto." >&2
-    echo "       Mensagem foi gravada mas ninguém vai processá-la até subir o daemon." >&2
-    echo "       Suba com: /MMB/.tooling/bin/commd.sh start" >&2
-  fi
-else
-  echo "AVISO: commd não parece estar rodando (state/commd.pid ausente)." >&2
-  echo "       Suba com: /MMB/.tooling/bin/commd.sh start" >&2
-fi
