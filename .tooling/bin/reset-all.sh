@@ -147,10 +147,11 @@ phase_inventory() {
   echo "  → $inv ($(wc -l < "$inv") linhas)"
 }
 
-# ── Fase 2 — gh close ───────────────────────────────────────────────────
+# ── Fase 2 — gh close (paralelo) ────────────────────────────────────────
 phase_github_close() {
   say "Fase 2: fechar PRs e issues abertos"
   local cmt="cleanup/reset do andaime — $TS"
+  local pids=()
   for repo in "${REPOS[@]}"; do
     local full="$GH_OWNER/$repo"
     local prs issues
@@ -158,13 +159,20 @@ phase_github_close() {
     issues=$(gh issue list --repo "$full" --state open --json number -q '.[].number' 2>/dev/null || echo "")
     for n in $prs; do
       echo "  $full PR #$n"
-      run "gh pr close $n --repo '$full' --comment '$cmt'"
+      if [ "$DRY_RUN" -eq 0 ]; then
+        gh pr close "$n" --repo "$full" --comment "$cmt" &
+        pids+=($!)
+      fi
     done
     for n in $issues; do
       echo "  $full issue #$n"
-      run "gh issue close $n --repo '$full' --comment '$cmt'"
+      if [ "$DRY_RUN" -eq 0 ]; then
+        gh issue close "$n" --repo "$full" --comment "$cmt" &
+        pids+=($!)
+      fi
     done
   done
+  [ "${#pids[@]}" -gt 0 ] && wait "${pids[@]}"
 }
 
 # ── Fase 3 — worktrees + branches ───────────────────────────────────────

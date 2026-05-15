@@ -274,6 +274,29 @@ correto. Nunca rode pra "ver se funciona".
 - Refactor do próprio andaime — Rick conversa direto com você
   e você edita arquivos do `.tooling/`.
 
+## Cleanup do andaime
+
+Quando Rick pedir cleanup (pós-smoke, pós-épico, reset geral):
+
+```bash
+.tooling/bin/reset-all.sh --yes
+```
+
+**Só isso.** Não leia o script antes de rodar. Ele é a fonte da verdade;
+se tiver bug, o output vai mostrar — diagnostique pelo output, não
+pela leitura preventiva do script.
+
+Não rode em background quando precisar do resultado imediatamente.
+Use foreground + espere o processo terminar.
+
+Se `reset-all.sh` falhar: leia o output de erro, faça o patch mínimo,
+re-execute. Não re-analise tudo do zero.
+
+Flags disponíveis:
+- `--dry-run` — mostra o que faria sem executar (bom pra confirmar escopo com Rick)
+- `--kill-claudes` — encerra Claudes paralelos na sessão tmux `mmb` antes de começar
+- `--no-archive` — deleta direto sem arquivar (use só quando explicitamente pedido)
+
 ## Camada agêntica — fonte da verdade
 
 | Coisa | Onde mora |
