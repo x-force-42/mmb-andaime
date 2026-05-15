@@ -1409,11 +1409,267 @@ PYEOF
   echo "=== BRIDGE PASS ==="
 }
 
+# ──────────────────────────────────────────────────────────────────
+# cmd_agents: AG1-AG9 — cobertura sandbox do agents.sh.
+#
+# agents.sh é o registry append-only de agentes (master/orq/atômico) +
+# heartbeats. Tem zero cobertura formal até v0.4. Aqui validamos:
+#   - register/deregister/heartbeat (state machine básica)
+#   - list / status / check-children (leitura por redução do log)
+#   - flock sob concorrência
+#   - escape de JSON em campos free-form (reason)
+#   - validação de argumentos
+#
+# Estratégia: TOOLING_DIR do agents.sh é derivado de
+# $(dirname "${BASH_SOURCE[0]}")/.. — basta copiar o script pra dentro
+# de uma estrutura tooling/{bin,state,logs} temporária. Não modifica
+# o script real.
+# ──────────────────────────────────────────────────────────────────
+
+_AG_SANDBOX=""
+_AG_TOOLING=""
+_AG=""
+
+_agents_sandbox_setup() {
+  _agents_sandbox_teardown
+  bash -n "$TOOLING_DIR/bin/agents.sh"
+  _AG_SANDBOX=$(mktemp -d /tmp/mmb-smoke-agents-XXXXXX)
+  _AG_TOOLING="$_AG_SANDBOX/tooling"
+  mkdir -p "$_AG_TOOLING/bin" "$_AG_TOOLING/state/heartbeats" "$_AG_TOOLING/logs"
+  cp "$TOOLING_DIR/bin/agents.sh" "$_AG_TOOLING/bin/agents.sh"
+  cp "$TOOLING_DIR/config.sh"     "$_AG_TOOLING/config.sh"
+  chmod +x "$_AG_TOOLING/bin/agents.sh"
+  _AG="$_AG_TOOLING/bin/agents.sh"
+}
+
+_agents_sandbox_teardown() {
+  if [[ -n "${_AG_SANDBOX:-}" && -d "$_AG_SANDBOX" ]]; then
+    rm -rf "$_AG_SANDBOX"
+  fi
+  _AG_SANDBOX=""
+  _AG_TOOLING=""
+  _AG=""
+}
+
+# _agents_assert_jsonl_valid <jsonl-path>
+# Cada linha precisa ser JSON parseável. Usa jq se disponível, senão
+# python3 (alinhado com _check_journal_events).
+_agents_assert_jsonl_valid() {
+  local path="$1"
+  if command -v jq >/dev/null 2>&1; then
+    if ! jq -c . "$path" >/dev/null 2>&1; then
+      _fail "JSONL inválido em $path"
+    fi
+  else
+    if ! python3 - "$path" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    for i, line in enumerate(f, 1):
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        try:
+            json.loads(line)
+        except Exception as e:
+            print(f"  FAIL: linha {i}: {e}")
+            sys.exit(1)
+PYEOF
+    then
+      exit 1
+    fi
+  fi
+}
+
+cmd_agents() {
+  echo "================================================================"
+  echo " SMOKE — agents (sandbox isolado, agents.sh)"
+  echo "================================================================"
+
+  local registry hb_dir
+  trap '_agents_sandbox_teardown' EXIT
+
+  # ─── AG1: register/deregister básico ───────────────────
+  echo
+  echo "── AG1: register/deregister básico ──"
+  _agents_sandbox_setup
+  registry="$_AG_TOOLING/state/agents.jsonl"
+  hb_dir="$_AG_TOOLING/state/heartbeats"
+
+  "$_AG" register foo-1 core "mmb:1.0" X1 epic-x >/dev/null
+  _assert "1 linha no registry após register" \
+    "[ \$(wc -l < '$registry') -eq 1 ]"
+  _assert "heartbeat criado" "[ -f '$hb_dir/foo-1.alive' ]"
+  _agents_assert_jsonl_valid "$registry"
+  _pass "JSONL válido (1 linha)"
+
+  "$_AG" deregister foo-1 done >/dev/null
+  _assert "2 linhas no registry após deregister" \
+    "[ \$(wc -l < '$registry') -eq 2 ]"
+  _assert "heartbeat removido" "[ ! -f '$hb_dir/foo-1.alive' ]"
+  _agents_assert_jsonl_valid "$registry"
+  _pass "JSONL válido (2 linhas)"
+
+  # ─── AG2: heartbeat = touch (não escreve no log) ───────
+  echo
+  echo "── AG2: heartbeat atualiza mtime, não escreve no log ──"
+  _agents_sandbox_setup
+  registry="$_AG_TOOLING/state/agents.jsonl"
+  hb_dir="$_AG_TOOLING/state/heartbeats"
+
+  "$_AG" register foo-2 core "mmb:1.0" >/dev/null
+  local lines_before mt_before mt_after
+  lines_before=$(wc -l < "$registry")
+  mt_before=$(stat -c %Y "$hb_dir/foo-2.alive")
+  sleep 1
+  "$_AG" heartbeat foo-2
+  mt_after=$(stat -c %Y "$hb_dir/foo-2.alive")
+  _assert "registry não cresceu após heartbeat" \
+    "[ \$(wc -l < '$registry') -eq $lines_before ]"
+  _assert "mtime do heartbeat avançou" "[ $mt_after -gt $mt_before ]"
+
+  # ─── AG3: list filtra vivos vs --all ───────────────────
+  echo
+  echo "── AG3: list filtra vivos vs --all ──"
+  _agents_sandbox_setup
+
+  "$_AG" register a-1 p1 pane >/dev/null
+  "$_AG" register a-2 p1 pane >/dev/null
+  "$_AG" deregister a-2 done >/dev/null
+
+  local list_alive list_all
+  list_alive=$("$_AG" list)
+  list_all=$("$_AG" list --all)
+
+  _assert "list mostra a-1 (vivo)" \
+    "echo '$list_alive' | grep -q '^a-1 '"
+  _assert "list NÃO mostra a-2 (deregistered)" \
+    "! echo '$list_alive' | grep -q '^a-2 '"
+  _assert "list --all mostra a-2" \
+    "echo '$list_all' | grep -q '^a-2 '"
+  _assert "list --all mostra a-1" \
+    "echo '$list_all' | grep -q '^a-1 '"
+
+  # ─── AG4: check-children sem zumbi → exit 0 ────────────
+  echo
+  echo "── AG4: check-children sem zumbi → exit 0 ──"
+  _agents_sandbox_setup
+
+  "$_AG" register c-1 dad pane >/dev/null
+  "$_AG" register c-2 dad pane >/dev/null
+  if "$_AG" check-children dad --threshold 600 >/dev/null; then
+    _pass "exit 0 com filhos saudáveis"
+  else
+    _fail "check-children retornou !=0 com filhos saudáveis"
+  fi
+
+  # ─── AG5: check-children com zumbi → exit 1 + STUCK ────
+  echo
+  echo "── AG5: check-children detecta zumbi via mtime ──"
+  _agents_sandbox_setup
+  hb_dir="$_AG_TOOLING/state/heartbeats"
+
+  "$_AG" register c-1 dad pane >/dev/null
+  # Backdate mtime do heartbeat pra simular ausência
+  touch -d "2 hours ago" "$hb_dir/c-1.alive"
+  local out
+  if out=$("$_AG" check-children dad --threshold 60 2>&1); then
+    _fail "check-children retornou 0 mas c-1 estava zumbi: $out"
+  fi
+  _assert "saída contém STUCK c-1" \
+    "echo '$out' | grep -q 'STUCK: c-1'"
+
+  # ─── AG6: status mostra último evento (reduce_last) ────
+  echo
+  echo "── AG6: status reduz log e mostra último evento ──"
+  _agents_sandbox_setup
+
+  "$_AG" register x-1 p pane >/dev/null
+  "$_AG" heartbeat x-1
+  "$_AG" deregister x-1 done >/dev/null
+  local status
+  status=$("$_AG" status x-1)
+  _assert "status reflete deregister (não spawn)" \
+    "echo '$status' | grep -q '\"ev\":\"deregister\"'"
+  _assert "status NÃO reflete spawn (foi superado)" \
+    "! echo '$status' | grep -q '\"ev\":\"spawn\"'"
+  _assert "status sinaliza heartbeat ausente após deregister" \
+    "echo '$status' | grep -q 'heartbeat: ausente'"
+
+  # ─── AG7: flock — 10 registers paralelos sem corrupção ─
+  echo
+  echo "── AG7: flock sob 10 registers paralelos ──"
+  _agents_sandbox_setup
+  registry="$_AG_TOOLING/state/agents.jsonl"
+
+  local i pids=()
+  for i in $(seq 1 10); do
+    "$_AG" register "p-$i" parent pane >/dev/null &
+    pids+=($!)
+  done
+  for i in "${pids[@]}"; do wait "$i"; done
+
+  _assert "10 linhas no registry" "[ \$(wc -l < '$registry') -eq 10 ]"
+  _agents_assert_jsonl_valid "$registry"
+  _pass "JSONL válido sob concorrência"
+  local distinct
+  distinct=$(grep -oE '"id":"p-[0-9]+"' "$registry" | sort -u | wc -l)
+  _assert "10 IDs distintos preservados (nenhum stomp)" \
+    "[ $distinct -eq 10 ]"
+
+  # ─── AG8: escape de campo free-form (reason com aspas) ─
+  echo
+  echo "── AG8: _json_str escapa aspas/backslash/newline ──"
+  _agents_sandbox_setup
+  registry="$_AG_TOOLING/state/agents.jsonl"
+
+  "$_AG" register esc-1 p pane >/dev/null
+  # reason free-form com aspas, backslash, newline e tab
+  "$_AG" deregister esc-1 $'aspas "x" backslash \\ nova\nlinha\ttab' >/dev/null
+  _agents_assert_jsonl_valid "$registry"
+  _pass "JSONL válido com reason malicioso"
+  # Confirma que conteúdo foi escapado (sem aspas crus dentro do valor)
+  local reason_line
+  reason_line=$(grep '"ev":"deregister"' "$registry")
+  _assert "reason contém \\\" escapado" \
+    "echo '$reason_line' | grep -q 'aspas \\\\\"x\\\\\"'"
+  _assert "reason contém \\\\n escapado" \
+    "echo '$reason_line' | grep -q 'nova\\\\n'"
+
+  # ─── AG9: validação de argumentos / comando inválido ───
+  echo
+  echo "── AG9: validação de argumentos ──"
+  _agents_sandbox_setup
+
+  # Captura rc com `|| rc=$?` — `; rc=$?` aborta sob set -e quando falha.
+  local rc
+
+  rc=0; "$_AG" register          >/dev/null 2>&1 || rc=$?
+  _assert "register sem args → exit 2" "[ $rc -eq 2 ]"
+
+  rc=0; "$_AG" deregister        >/dev/null 2>&1 || rc=$?
+  _assert "deregister sem args → exit 2" "[ $rc -eq 2 ]"
+
+  rc=0; "$_AG" status nao-existe >/dev/null 2>&1 || rc=$?
+  _assert "status de id inexistente → exit 3" "[ $rc -eq 3 ]"
+
+  rc=0; "$_AG" foobar            >/dev/null 2>&1 || rc=$?
+  _assert "comando desconhecido → exit 2" "[ $rc -eq 2 ]"
+
+  rc=0; "$_AG"                   >/dev/null 2>&1 || rc=$?
+  _assert "sem args mostra help e → exit 1" "[ $rc -eq 1 ]"
+
+  _agents_sandbox_teardown
+  echo
+  echo "=== AGENTS PASS ==="
+}
+
 cmd_hardening() {
-  echo "=== HARDENING: light + medium + bridge ==="
+  echo "=== HARDENING: light + medium + bridge + agents ==="
   cmd_light
   cmd_medium
   cmd_bridge
+  cmd_agents
   echo "=== HARDENING PASS ==="
 }
 
@@ -1422,16 +1678,18 @@ case "$MODE" in
   medium)          cmd_medium ;;
   stress)          cmd_stress ;;
   bridge)          cmd_bridge ;;
+  agents)          cmd_agents ;;
   hardening)       cmd_hardening ;;
   comm|"")         cmd_comm ;;
   aquario)         cmd_aquario ;;
   *)
-    echo "Uso: $0 [light|medium|stress|bridge|hardening|comm|aquario]" >&2
+    echo "Uso: $0 [light|medium|stress|bridge|agents|hardening|comm|aquario]" >&2
     echo "  light      — sandbox isolado, mock claude, validação C1-C6 (rápido)" >&2
     echo "  medium     — sandbox isolado, falhas controladas e recovery" >&2
     echo "  stress     — sandbox isolado, volume e concorrência (demorado)" >&2
     echo "  bridge     — unit test das regexes do aquario-bridge (sem sandbox)" >&2
-    echo "  hardening  — light + medium + bridge (CI/validação pré-push)" >&2
+    echo "  agents     — unit-ish do agents.sh em sandbox isolado" >&2
+    echo "  hardening  — light + medium + bridge + agents (CI/validação pré-push)" >&2
     echo "  comm       — canal ponta-a-ponta (requer commd vivo + claude real)" >&2
     echo "  aquario    — canal + bridge WS (requer bridge + relay)" >&2
     exit 1
