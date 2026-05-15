@@ -1,0 +1,832 @@
+#!/usr/bin/env bash
+# mmb — CLI de inspeção/manutenção do andaime MMB.
+#
+# Ferramenta read-only por padrão. Não substitui up.sh nem reset-all.sh.
+# Único subcomando que envia sinal: `mmb daemon stop`.
+#
+# Flags globais (em qualquer posição):
+#   --yes / -y    Pula confirmações interativas.
+#   --help / -h   Mostra usage.
+#
+# NO_COLOR=1 ou stdout não-tty → desabilita cores ANSI.
+
+set -uo pipefail
+
+TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MMB_ROOT="$(dirname "$TOOLING_DIR")"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/config.sh"
+
+STATE_DIR="$TOOLING_DIR/state"
+LOG_DIR="$TOOLING_DIR/logs"
+INBOX_BASE="$TOOLING_DIR/inbox"
+PID_FILE="$STATE_DIR/commd.pid"
+COMMD_LOG="$LOG_DIR/commd.log"
+JOURNAL_LOG="$LOG_DIR/journal.jsonl"
+
+DESTS=(master core cockpit aquarium)
+REPOS=(mmb-core mmb-cockpit mmb-aquarium)
+
+ASSUME_YES=0
+
+# ─── ANSI helpers ────────────────────────────────────────────────
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  _C_RED=$'\033[31m'
+  _C_GREEN=$'\033[32m'
+  _C_YELLOW=$'\033[33m'
+  _C_DIM=$'\033[2m'
+  _C_BOLD=$'\033[1m'
+  _C_RESET=$'\033[0m'
+else
+  _C_RED=""; _C_GREEN=""; _C_YELLOW=""; _C_DIM=""; _C_BOLD=""; _C_RESET=""
+fi
+
+_red()    { printf '%s%s%s' "$_C_RED"    "$*" "$_C_RESET"; }
+_green()  { printf '%s%s%s' "$_C_GREEN"  "$*" "$_C_RESET"; }
+_yellow() { printf '%s%s%s' "$_C_YELLOW" "$*" "$_C_RESET"; }
+_dim()    { printf '%s%s%s' "$_C_DIM"    "$*" "$_C_RESET"; }
+_bold()   { printf '%s%s%s' "$_C_BOLD"   "$*" "$_C_RESET"; }
+_hr()     { printf '%s\n' "────────────────────────────────────────────────────────────────"; }
+
+_section() {
+  echo
+  printf '%s\n' "$(_bold "=== $* ===")"
+}
+
+_kv() {
+  printf '  %-12s %s\n' "$1" "$2"
+}
+
+_confirm() {
+  local prompt="$1"
+  if [ "$ASSUME_YES" -eq 1 ]; then
+    return 0
+  fi
+  if [ ! -t 0 ]; then
+    echo "ERRO: stdin não é tty; use --yes pra confirmar não-interativo." >&2
+    return 1
+  fi
+  local ans
+  printf '%s' "$prompt"
+  read -r ans
+  [[ "$ans" =~ ^[yY]$ ]]
+}
+
+# ─── State collectors (no set -e — tolerantes a estado parcial) ─
+
+_init_check() {
+  if [ ! -d "$STATE_DIR" ] || [ ! -d "$INBOX_BASE" ] || [ ! -d "$LOG_DIR" ]; then
+    echo "andaime nunca foi inicializado — use up.sh" >&2
+    exit 2
+  fi
+}
+
+_commd_state() {
+  if [ ! -f "$PID_FILE" ]; then
+    echo "STOPPED"
+    return 2
+  fi
+  local pid
+  pid=$(cat "$PID_FILE" 2>/dev/null)
+  if [ -z "$pid" ]; then
+    echo "STOPPED"
+    return 2
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "RUNNING $pid"
+    return 0
+  else
+    echo "STALE $pid"
+    return 1
+  fi
+}
+
+_count_dir() {
+  local d="$1"
+  if [ -d "$d" ]; then
+    find "$d" -maxdepth 1 -type f -not -name '.*' 2>/dev/null | wc -l | tr -d ' '
+  else
+    echo 0
+  fi
+}
+
+_inbox_counts() {
+  local dest="$1"
+  local top processing done dead
+  top=$(_count_dir "$INBOX_BASE/$dest")
+  processing=$(_count_dir "$INBOX_BASE/$dest/.processing")
+  done=$(_count_dir "$INBOX_BASE/$dest/.done")
+  dead=$(_count_dir "$INBOX_BASE/$dest/.dead")
+  echo "$top $processing $done $dead"
+}
+
+_repo_task_branches() {
+  local repo="$1"
+  local path="$MMB_ROOT/$repo"
+  [ -d "$path/.git" ] || [ -f "$path/.git" ] || return 0
+  git -C "$path" for-each-ref --format='%(refname:short)' refs/heads/task/ 2>/dev/null
+}
+
+_repo_dirty() {
+  local repo="$1"
+  local path="$MMB_ROOT/$repo"
+  [ -d "$path/.git" ] || [ -f "$path/.git" ] || return 0
+  local out
+  out=$(git -C "$path" status --porcelain 2>/dev/null)
+  [ -n "$out" ]
+}
+
+# Normaliza timestamp do filename msg.sh: 2026-05-15T14-23-01Z → 2026-05-15T14:23:01Z
+_fmt_msg_ts() {
+  local raw="$1"
+  local date_part time_part
+  date_part="${raw%%T*}"
+  time_part="${raw##*T}"
+  time_part="${time_part//-/:}"
+  echo "${date_part}T${time_part}"
+}
+
+# Parse + imprime mensagens em um dir do inbox
+_list_inbox_dir() {
+  local dest="$1" dir="$2"
+  local found=0
+  if [ -d "$dir" ]; then
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      found=1
+      local base name ts from type subject
+      base=$(basename "$f")
+      name="${base%.md}"
+      ts="${name%%_*}"
+      local rest="${name#*_}"
+      from="${rest%%_*}"
+      rest="${rest#*_}"
+      type="${rest%%_*}"
+      subject="${rest#*_}"
+      printf '  %-9s %-22s %s->%s  %-12s %s\n' \
+        "$dest" "$(_fmt_msg_ts "$ts")" "$from" "$dest" "$type" "$subject"
+    done < <(find "$dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null | sort)
+  fi
+  if [ "$found" -eq 0 ]; then
+    printf '  %-9s %s\n' "$dest" "$(_dim "(vazio)")"
+  fi
+}
+
+# ─── Subcomandos ─────────────────────────────────────────────────
+
+cmd_status() {
+  _section "MMB Andaime — status"
+
+  local state pid_disp
+  state=$(_commd_state)
+  case "$state" in
+    RUNNING*)
+      pid_disp="${state#RUNNING }"
+      _kv "commd:" "$(_green "RUNNING") (pid=$pid_disp)"
+      ;;
+    STALE*)
+      pid_disp="${state#STALE }"
+      _kv "commd:" "$(_yellow "STALE") (pid=$pid_disp from file, process dead)"
+      ;;
+    STOPPED)
+      _kv "commd:" "$(_dim "STOPPED")"
+      ;;
+  esac
+
+  echo
+  echo "$(_bold "Inbox:")"
+  local d counts top processing done dead label warn
+  for d in "${DESTS[@]}"; do
+    read -r top processing done dead < <(_inbox_counts "$d")
+    warn=""
+    if [ "$dead" -gt 0 ]; then warn=" $(_red "⚠")"; fi
+    label=$(printf 'inbox/%s:' "$d")
+    printf '  %-18s top=%s processing=%s done=%s dead=%s%s\n' \
+      "$label" "$top" "$processing" "$done" "$dead" "$warn"
+  done
+
+  echo
+  echo "$(_bold "Repos:")"
+  local repo branches dirty any=0
+  for repo in "${REPOS[@]}"; do
+    branches=$(_repo_task_branches "$repo")
+    dirty=0
+    _repo_dirty "$repo" && dirty=1
+    if [ -n "$branches" ] || [ "$dirty" -eq 1 ]; then
+      any=1
+      if [ -n "$branches" ]; then
+        while IFS= read -r b; do
+          printf '  %s %s in %s\n' "$(_yellow "⚠")" "$b" "$repo"
+        done <<< "$branches"
+      fi
+      if [ "$dirty" -eq 1 ]; then
+        printf '  %s %s tem mudanças não-commitadas\n' "$(_yellow "⚠")" "$repo"
+      fi
+    fi
+  done
+  if [ "$any" -eq 0 ]; then
+    printf '  %s\n' "$(_dim "(limpo)")"
+  fi
+
+  echo
+  echo "$(_bold "Journal (último evento):")"
+  if [ -s "$JOURNAL_LOG" ]; then
+    local last
+    last=$(tail -1 "$JOURNAL_LOG")
+    if command -v jq >/dev/null 2>&1; then
+      printf '  %s\n' "$(echo "$last" | jq -c '.' 2>/dev/null || echo "$last")"
+    else
+      printf '  %s\n' "$last"
+    fi
+  else
+    printf '  %s\n' "$(_dim "(vazio)")"
+  fi
+  return 0
+}
+
+cmd_preflight() {
+  _section "MMB preflight"
+  local rc=0 critical=0 warn=0
+
+  local dep
+  for dep in inotifywait gh tmux git claude bash; do
+    if command -v "$dep" >/dev/null 2>&1; then
+      printf '  %s %s\n' "$(_green "✓")" "$dep"
+    else
+      printf '  %s %s — dep crítica ausente\n' "$(_red "✗")" "$dep"
+      critical=1
+    fi
+  done
+  for dep in jq python3; do
+    if command -v "$dep" >/dev/null 2>&1; then
+      printf '  %s %s\n' "$(_green "✓")" "$dep"
+    else
+      printf '  %s %s — opcional, ausente\n' "$(_yellow "⚠")" "$dep"
+      warn=1
+    fi
+  done
+
+  echo
+  if gh auth status >/dev/null 2>&1; then
+    printf '  %s gh autenticado\n' "$(_green "✓")"
+  else
+    printf '  %s gh não autenticado (gh auth login)\n' "$(_red "✗")"
+    critical=1
+  fi
+
+  echo
+  if [ -f "$PID_FILE" ]; then
+    local existing_pid
+    existing_pid=$(cat "$PID_FILE" 2>/dev/null || echo "?")
+    if ( exec 200<"$PID_FILE"; flock -n 200 ) 2>/dev/null; then
+      if kill -0 "$existing_pid" 2>/dev/null; then
+        printf '  %s commd: pid file presente (pid=%s vivo, lock livre — investigar)\n' \
+          "$(_yellow "⚠")" "$existing_pid"
+        warn=1
+      else
+        printf '  %s commd: pid file stale (pid=%s morto, lock livre — OK pra subir)\n' \
+          "$(_green "✓")" "$existing_pid"
+      fi
+    else
+      printf '  %s commd: já tem instância viva (pid=%s, lock ocupado)\n' \
+        "$(_green "✓")" "$existing_pid"
+    fi
+  else
+    printf '  %s commd: sem pid file (OK pra subir)\n' "$(_green "✓")"
+  fi
+
+  echo
+  local d dead_c
+  for d in "${DESTS[@]}"; do
+    dead_c=$(_count_dir "$INBOX_BASE/$d/.dead")
+    if [ "$dead_c" -gt 0 ]; then
+      printf '  %s inbox/%s/.dead — %s postmortem(s) pendente(s)\n' \
+        "$(_yellow "⚠")" "$d" "$dead_c"
+      warn=1
+    fi
+  done
+
+  echo
+  local repo branches
+  for repo in "${REPOS[@]}"; do
+    branches=$(_repo_task_branches "$repo")
+    if [ -n "$branches" ]; then
+      while IFS= read -r b; do
+        printf '  %s %s branch task/* viva: %s\n' "$(_yellow "⚠")" "$repo" "$b"
+      done <<< "$branches"
+      warn=1
+    fi
+    if _repo_dirty "$repo"; then
+      printf '  %s %s tem mudanças não-commitadas\n' "$(_yellow "⚠")" "$repo"
+      warn=1
+    fi
+  done
+
+  echo
+  if [ "$critical" -eq 1 ]; then
+    echo "$(_red "✗") preflight crítico — corrija antes de subir"
+    rc=2
+  elif [ "$warn" -eq 1 ]; then
+    echo "$(_yellow "⚠") preflight com avisos — pode subir com cuidado"
+    rc=1
+  else
+    echo "$(_green "✓") preflight OK"
+    rc=0
+  fi
+  return "$rc"
+}
+
+cmd_smoke() {
+  local sub="${1:-}"
+  case "$sub" in
+    light|medium|stress|hardening)
+      exec "$TOOLING_DIR/bin/smoke.sh" "$sub"
+      ;;
+    *)
+      cat >&2 <<EOF
+Uso: mmb smoke <subcommand>
+
+Subcomandos disponíveis:
+  light      — sandbox isolado, mock claude, validação C1-C6 (~5s)
+  medium     — sandbox isolado, falhas controladas + recovery (~22s)
+  stress     — sandbox isolado, volume e concorrência (~17s)
+  hardening  — light + medium, CI/validação pré-push (~28s)
+
+Para canal real (comm/aquario): use .tooling/bin/smoke.sh direto.
+EOF
+      return 2
+      ;;
+  esac
+}
+
+cmd_inbox() {
+  local kind="${1:-top}"
+  local subdir label
+  case "$kind" in
+    top|"")          subdir="";            label="Inbox (top-level)" ;;
+    dead)            subdir="/.dead";      label="Inbox (.dead — postmortems)" ;;
+    processing)      subdir="/.processing"; label="Inbox (.processing — em voo)" ;;
+    *)
+      echo "Uso: mmb inbox [dead|processing]" >&2
+      return 2
+      ;;
+  esac
+  _section "$label"
+  local d
+  for d in "${DESTS[@]}"; do
+    _list_inbox_dir "$d" "$INBOX_BASE/$d$subdir"
+  done
+  return 0
+}
+
+cmd_daemon() {
+  local sub="${1:-}"
+  case "$sub" in
+    status)
+      local state
+      state=$(_commd_state)
+      case "$state" in
+        RUNNING*) echo "commd: $(_green "RUNNING") (pid=${state#RUNNING })" ;;
+        STALE*)   echo "commd: $(_yellow "STALE") (pid=${state#STALE } from file, process dead)" ;;
+        STOPPED)  echo "commd: $(_dim "STOPPED")" ;;
+      esac
+      return 0
+      ;;
+    stop)
+      if ! _confirm "Stop commd daemon? [y/N] "; then
+        echo "abortado."
+        return 1
+      fi
+      "$TOOLING_DIR/bin/commd.sh" stop
+      return $?
+      ;;
+    start)
+      cat <<EOF
+Daemon start não é gerenciado pelo mmb.
+
+Setup completo (recomendado):
+  .tooling/bin/up.sh
+
+Debug em foreground (bloqueia o terminal):
+  .tooling/bin/commd.sh fg
+EOF
+      return 0
+      ;;
+    *)
+      echo "Uso: mmb daemon [status|stop|start]" >&2
+      return 2
+      ;;
+  esac
+}
+
+cmd_logs() {
+  local target="" follow=0 lines=50
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --follow|-f) follow=1; shift ;;
+      -n)          lines="${2:-50}"; shift 2 ;;
+      -n*)         lines="${1#-n}"; shift ;;
+      *)
+        if [ -z "$target" ]; then target="$1"; shift
+        else
+          echo "Uso: mmb logs [target] [--follow] [-n N]" >&2
+          return 2
+        fi
+        ;;
+    esac
+  done
+
+  if [ -z "$target" ]; then
+    if [ ! -t 0 ]; then
+      echo "Uso: mmb logs <commd|core|cockpit|aquarium> [--follow] [-n N]" >&2
+      return 2
+    fi
+    echo "Qual log?"
+    echo "  1) commd"
+    echo "  2) core"
+    echo "  3) cockpit"
+    echo "  4) aquarium"
+    printf '> '
+    local pick
+    read -r pick
+    case "$pick" in
+      1) target=commd ;;
+      2) target=core ;;
+      3) target=cockpit ;;
+      4) target=aquarium ;;
+      *) echo "(opção inválida)" >&2; return 2 ;;
+    esac
+  fi
+
+  local path
+  case "$target" in
+    commd)                  path="$COMMD_LOG" ;;
+    core|cockpit|aquarium)  path="$LOG_DIR/workers/$target.log" ;;
+    master)
+      echo "mmb logs: 'master' não tem log dedicado." >&2
+      echo "Logs disponíveis: commd, core, cockpit, aquarium." >&2
+      return 2
+      ;;
+    *)
+      echo "Uso: mmb logs <commd|core|cockpit|aquarium> [--follow] [-n N]" >&2
+      return 2
+      ;;
+  esac
+
+  if [ ! -f "$path" ]; then
+    echo "$(_dim "(log ainda não existe: $path)")"
+    return 0
+  fi
+
+  if [ "$follow" -eq 1 ]; then
+    tail -F -n "$lines" "$path"
+  else
+    tail -n "$lines" "$path"
+  fi
+}
+
+cmd_journal() {
+  local follow=0 lines=20
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --follow|-f) follow=1; shift ;;
+      -n)          lines="${2:-20}"; shift 2 ;;
+      -n*)         lines="${1#-n}"; shift ;;
+      *)
+        echo "Uso: mmb journal [--follow] [-n N]" >&2
+        return 2
+        ;;
+    esac
+  done
+
+  if [ ! -f "$JOURNAL_LOG" ]; then
+    echo "$(_dim "(journal ainda não existe: $JOURNAL_LOG)")"
+    return 0
+  fi
+
+  local has_jq=0
+  command -v jq >/dev/null 2>&1 && has_jq=1
+
+  if [ "$follow" -eq 1 ]; then
+    if [ "$has_jq" -eq 1 ]; then
+      tail -F -n "$lines" "$JOURNAL_LOG" | jq -c '.'
+    else
+      tail -F -n "$lines" "$JOURNAL_LOG"
+    fi
+  else
+    if [ "$has_jq" -eq 1 ]; then
+      tail -n "$lines" "$JOURNAL_LOG" | jq -c '.'
+    else
+      tail -n "$lines" "$JOURNAL_LOG"
+    fi
+  fi
+}
+
+cmd_doctor() {
+  _section "MMB doctor"
+  cmd_preflight
+  local pf_rc=$?
+  local sm_rc=0
+  if [ "$pf_rc" -le 1 ]; then
+    echo
+    cmd_smoke light
+    sm_rc=$?
+  else
+    echo
+    echo "$(_red "✗") preflight crítico — pulando smoke light"
+  fi
+
+  echo
+  _hr
+  local max=$pf_rc
+  [ "$sm_rc" -gt "$max" ] && max=$sm_rc
+  case "$max" in
+    0) echo "$(_green "✓ pronto") — andaime saudável" ;;
+    1) echo "$(_yellow "⚠ subir com cuidado") — avisos não-bloqueantes" ;;
+    *) echo "$(_red "✗ não suba ainda") — falha crítica" ;;
+  esac
+  return "$max"
+}
+
+cmd_cleanup() {
+  cat <<EOF
+Cleanup do andaime — opções manuais (mmb NÃO executa nada destas)
+────────────────────────────────────────────────────────────────
+
+Reset total (PRs+issues+branches+inbox; DESTRUTIVO):
+  .tooling/bin/reset-all.sh --dry-run         # ver o que faria
+  .tooling/bin/reset-all.sh                    # interativo
+  .tooling/bin/reset-all.sh --yes              # CI / sem confirmar
+
+Arquivar inbox/.dead/ sem reset total:
+  mkdir -p /tmp/mmb-dead-\$(date -u +%s)/
+  mv .tooling/inbox/*/.dead/*.md /tmp/mmb-dead-\$(date -u +%s)/
+
+Limpar journal sem reset total:
+  : > .tooling/logs/journal.jsonl
+
+Para entender o que cada fase do reset-all faz:
+  .tooling/bin/reset-all.sh --help
+EOF
+  return 0
+}
+
+cmd_reset() {
+  cat <<EOF
+Reset destrutivo não é gerenciado pelo mmb (atrito intencional).
+
+Use:
+  .tooling/bin/reset-all.sh --dry-run          # ver o que faria
+  .tooling/bin/reset-all.sh                     # interativo
+
+Para limpezas menos destrutivas: mmb cleanup
+EOF
+  return 0
+}
+
+cmd_up() {
+  cat <<EOF
+Setup do andaime não é gerenciado pelo mmb.
+
+Use:
+  .tooling/bin/up.sh                            # normal (Opus tudo)
+  MMB_MODE=fast .tooling/bin/up.sh              # smoke
+  .tooling/bin/up.sh --no-master-claude         # master em sessão externa
+EOF
+  return 0
+}
+
+# ─── Menu interativo ─────────────────────────────────────────────
+
+_menu_header() {
+  clear 2>/dev/null || true
+  printf '%s\n' "$(_bold "=== MMB Andaime ===")"
+  local state
+  state=$(_commd_state)
+  case "$state" in
+    RUNNING*) printf 'commd:  %s (pid=%s)\n' "$(_green "RUNNING")" "${state#RUNNING }" ;;
+    STALE*)   printf 'commd:  %s (pid=%s, dead)\n' "$(_yellow "STALE")" "${state#STALE }" ;;
+    STOPPED)  printf 'commd:  %s\n' "$(_dim "STOPPED")" ;;
+  esac
+
+  local d top processing done dead summary=""
+  for d in "${DESTS[@]}"; do
+    read -r top processing done dead < <(_inbox_counts "$d")
+    local frag="$d=$top"
+    if [ "$dead" -gt 0 ]; then frag="$frag($dead""d)"; fi
+    summary="$summary $frag"
+  done
+  printf 'inbox: %s\n' "$summary"
+
+  local repo branches any=0
+  for repo in "${REPOS[@]}"; do
+    branches=$(_repo_task_branches "$repo")
+    if [ -n "$branches" ]; then
+      while IFS= read -r b; do
+        printf 'repos:  %s %s em %s\n' "$(_yellow "⚠")" "$b" "$repo"
+        any=1
+      done <<< "$branches"
+    fi
+  done
+  [ "$any" -eq 0 ] && printf 'repos:  %s\n' "$(_dim "(limpo)")"
+  echo
+}
+
+_pause() {
+  if [ -t 0 ]; then
+    printf '\n%s' "[Enter pra voltar ao menu] "
+    read -r _
+  fi
+}
+
+_menu_smoke() {
+  while :; do
+    clear 2>/dev/null || true
+    printf '%s\n' "$(_bold "=== Smoke ===")"
+    echo "1) light       (~5s)"
+    echo "2) medium      (~22s)"
+    echo "3) stress      (~17s)"
+    echo "4) hardening   (~28s, light+medium)"
+    echo "b) Back"
+    printf '> '
+    local pick; read -r pick
+    case "$pick" in
+      1) "$TOOLING_DIR/bin/smoke.sh" light;     _pause ;;
+      2) "$TOOLING_DIR/bin/smoke.sh" medium;    _pause ;;
+      3) "$TOOLING_DIR/bin/smoke.sh" stress;    _pause ;;
+      4) "$TOOLING_DIR/bin/smoke.sh" hardening; _pause ;;
+      b|"") return 0 ;;
+      *) echo "(opção inválida)"; sleep 1 ;;
+    esac
+  done
+}
+
+_menu_inbox() {
+  while :; do
+    clear 2>/dev/null || true
+    printf '%s\n' "$(_bold "=== Inbox ===")"
+    echo "1) Top-level (pendentes)"
+    echo "2) Dead letters (postmortems)"
+    echo "3) Processing (em voo)"
+    echo "b) Back"
+    printf '> '
+    local pick; read -r pick
+    case "$pick" in
+      1) cmd_inbox top;        _pause ;;
+      2) cmd_inbox dead;       _pause ;;
+      3) cmd_inbox processing; _pause ;;
+      b|"") return 0 ;;
+      *) echo "(opção inválida)"; sleep 1 ;;
+    esac
+  done
+}
+
+_menu_daemon() {
+  while :; do
+    clear 2>/dev/null || true
+    printf '%s\n' "$(_bold "=== Daemons ===")"
+    echo "1) Status"
+    echo "2) Stop (commd)"
+    echo "3) Start — informativo"
+    echo "b) Back"
+    printf '> '
+    local pick; read -r pick
+    case "$pick" in
+      1) cmd_daemon status; _pause ;;
+      2) cmd_daemon stop;   _pause ;;
+      3) cmd_daemon start;  _pause ;;
+      b|"") return 0 ;;
+      *) echo "(opção inválida)"; sleep 1 ;;
+    esac
+  done
+}
+
+_menu_logs() {
+  while :; do
+    clear 2>/dev/null || true
+    printf '%s\n' "$(_bold "=== Logs ===")"
+    echo "1) commd"
+    echo "2) core"
+    echo "3) cockpit"
+    echo "4) aquarium"
+    echo "5) Journal (jsonl)"
+    echo "b) Back"
+    printf '> '
+    local pick; read -r pick
+    case "$pick" in
+      1) cmd_logs commd;    _pause ;;
+      2) cmd_logs core;     _pause ;;
+      3) cmd_logs cockpit;  _pause ;;
+      4) cmd_logs aquarium; _pause ;;
+      5) cmd_journal;       _pause ;;
+      b|"") return 0 ;;
+      *) echo "(opção inválida)"; sleep 1 ;;
+    esac
+  done
+}
+
+interactive_menu() {
+  if [ ! -t 0 ]; then
+    usage
+    exit 2
+  fi
+  while :; do
+    _menu_header
+    echo "1) Status geral"
+    echo "2) Preflight"
+    echo "3) Smoke tests"
+    echo "4) Inbox / Dead letters"
+    echo "5) Daemons"
+    echo "6) Logs / Journal"
+    echo "7) Cleanup seguro"
+    echo "0) Sair"
+    printf '> '
+    local pick; read -r pick
+    case "$pick" in
+      1) cmd_status;     _pause ;;
+      2) cmd_preflight || true; _pause ;;
+      3) _menu_smoke ;;
+      4) _menu_inbox ;;
+      5) _menu_daemon ;;
+      6) _menu_logs ;;
+      7) cmd_cleanup;    _pause ;;
+      0) return 0 ;;
+      "") ;;
+      *) echo "(opção inválida)"; sleep 1 ;;
+    esac
+  done
+}
+
+# ─── usage + dispatch ────────────────────────────────────────────
+
+usage() {
+  cat <<EOF
+mmb — CLI de inspeção do andaime MMB
+
+Uso:
+  mmb [--yes] <subcommand> [args...]
+  mmb                        # menu interativo
+
+Subcomandos:
+  status                     Resumo de uma tela (commd, inbox, repos, journal)
+  preflight                  Diagnóstico pré-boot (deps, gh, lockfile, .dead)
+  smoke <mode>               Wrap de smoke.sh: light|medium|stress|hardening
+  inbox [dead|processing]    Lista mensagens por destinatário
+  daemon <sub>               status | stop (confirma) | start (informativo)
+  logs [target] [--follow] [-n N]
+                             commd | core | cockpit | aquarium
+  journal [--follow] [-n N]  Tail de logs/journal.jsonl (jq se disponível)
+  doctor                     preflight + smoke light + sumário
+  cleanup                    Imprime opções de cleanup (não executa)
+  reset                      Informativo — aponta pra reset-all.sh
+  up                         Informativo — aponta pra up.sh
+
+Flags globais:
+  --yes, -y                  Pula confirmações (daemon stop, etc.)
+  --help, -h                 Mostra este texto
+EOF
+}
+
+main() {
+  local args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --yes|-y)   ASSUME_YES=1; shift ;;
+      --help|-h)  usage; exit 0 ;;
+      help)       usage; exit 0 ;;
+      *)          args+=("$1"); shift ;;
+    esac
+  done
+
+  _init_check
+
+  if [ "${#args[@]}" -eq 0 ]; then
+    interactive_menu
+    exit 0
+  fi
+
+  local cmd="${args[0]}"
+  set -- "${args[@]:1}"
+
+  case "$cmd" in
+    status)    cmd_status "$@" ;;
+    preflight) cmd_preflight "$@" ;;
+    smoke)     cmd_smoke "$@" ;;
+    inbox)     cmd_inbox "$@" ;;
+    daemon)    cmd_daemon "$@" ;;
+    logs)      cmd_logs "$@" ;;
+    journal)   cmd_journal "$@" ;;
+    doctor)    cmd_doctor "$@" ;;
+    cleanup)   cmd_cleanup "$@" ;;
+    reset)     cmd_reset "$@" ;;
+    up)        cmd_up "$@" ;;
+    *)
+      echo "mmb: subcomando desconhecido '$cmd'" >&2
+      echo >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"
