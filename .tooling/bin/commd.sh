@@ -32,8 +32,11 @@ LOG_DIR="$TOOLING_DIR/logs"
 INBOX_BASE="$TOOLING_DIR/inbox"
 PID_FILE="$STATE_DIR/commd.pid"
 COMMD_LOG="$LOG_DIR/commd.log"
+JOURNAL_LOG="$LOG_DIR/journal.jsonl"
+JOURNAL_LOCK="$LOG_DIR/.journal.lock"
 
 mkdir -p "$STATE_DIR" "$LOG_DIR/workers"
+[ -f "$JOURNAL_LOG" ] || : > "$JOURNAL_LOG"
 
 # Cria inboxes idempotente
 for d in master core cockpit aquarium; do
@@ -42,6 +45,34 @@ done
 
 log() {
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$COMMD_LOG"
+}
+
+# Append JSONL no journal compartilhado. Eventos prefixados commd-*
+# para o bridge (e log.sh consumers) ignorarem — bridge só lê
+# event=pr-opened. Falha silenciosa se flock timeout: journaling
+# nunca deve quebrar dispatch.
+#
+# Uso: journal <event> <dest> <basename> [key=val ...]
+#   key=val: extras numéricos (ex.: exit_code=124, timeout_seconds=1200).
+journal() {
+  local event="$1" dest="$2" basename="$3"
+  shift 3
+  local ts json
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  # pid = commd ($$). Worker pid vive no header de logs/workers/<dest>.log.
+  json=$(printf '{"ts":"%s","event":"%s","dest":"%s","file":"%s","pid":%d' \
+    "$ts" "$event" "$dest" "$basename" "$$")
+  local kv key val
+  for kv in "$@"; do
+    key="${kv%%=*}"
+    val="${kv#*=}"
+    json+=$(printf ',"%s":%s' "$key" "$val")
+  done
+  json+='}'
+  (
+    flock --timeout 5 9 || exit 0
+    printf '%s\n' "$json" >> "$JOURNAL_LOG"
+  ) 9>>"$JOURNAL_LOCK" || true
 }
 
 cmd_status() {
@@ -99,14 +130,24 @@ dispatch() {
   [ -f "$file" ] || return
 
   log "dispatch: dest=$dest file=$basename"
+  journal commd-dispatch "$dest" "$basename"
 
   # Lock por destinatário; worker roda em background dentro do lock.
   # Outros eventos pra outros destinos seguem em paralelo.
   local lock="$STATE_DIR/worker-${dest}.lock"
   (
     flock 9
-    "$TOOLING_DIR/bin/worker.sh" "$dest" "$file" \
-      || log "worker exit-code=$? dest=$dest file=$basename"
+    rc=0
+    "$TOOLING_DIR/bin/worker.sh" "$dest" "$file" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      journal commd-worker-done "$dest" "$basename"
+    elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+      journal commd-worker-timeout "$dest" "$basename" "timeout_seconds=$MMB_WORKER_TIMEOUT"
+      log "worker TIMEOUT (rc=$rc) dest=$dest file=$basename"
+    else
+      journal commd-worker-exit "$dest" "$basename" "exit_code=$rc"
+      log "worker exit-code=$rc dest=$dest file=$basename"
+    fi
   ) 9>>"$lock" &
 }
 
