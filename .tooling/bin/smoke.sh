@@ -1664,12 +1664,265 @@ cmd_agents() {
   echo "=== AGENTS PASS ==="
 }
 
+# ──────────────────────────────────────────────────────────────────
+# cmd_spawn_atomic: SP1-SP8 — cobertura sandbox do spawn-atomic.sh.
+#
+# spawn-atomic.sh valida issue no GH, delega worktree pro task-start.sh,
+# spawna split tmux + claude e registra o atômico no agent registry.
+# Sem cobertura formal até v0.4 (gap (a) do tag).
+#
+# Estratégia (paralela ao cmd_agents):
+#   - Sandbox em /tmp/mmb-smoke-spawn-XXXXXX com cópia do tooling
+#     (spawn-atomic.sh + task-start.sh + agents.sh + config.sh) e um
+#     repo git real em mmb-core/ (init + commit empty + docs/tasks/).
+#   - Stubs PATH-local pra `gh` e `tmux` controlados por env vars:
+#       STUB_GH_EXIT, STUB_GH_STATE, STUB_GH_LABELS, STUB_GH_TITLE
+#       STUB_TMUX_HAS_SESSION, STUB_TMUX_WINDOWS_OUT, STUB_TMUX_PANES_OUT
+#       STUB_TMUX_LOG  (cada chamada do tmux fake é appendada)
+#   - `claude` real nunca é invocado: spawn-atomic só envia o comando
+#     via `tmux send-keys` (stubbado), não executa o binário.
+# ──────────────────────────────────────────────────────────────────
+
+_SP_SANDBOX=""
+_SP_MMB=""
+_SP_TOOLING=""
+_SP_REPO=""
+_SP_BIN=""
+_SP_TMUX_LOG=""
+
+_spawn_sandbox_setup() {
+  _spawn_sandbox_teardown
+  bash -n "$TOOLING_DIR/bin/spawn-atomic.sh"
+
+  _SP_SANDBOX=$(mktemp -d /tmp/mmb-smoke-spawn-XXXXXX)
+  _SP_MMB="$_SP_SANDBOX/mmb"
+  _SP_TOOLING="$_SP_MMB/tooling"
+  _SP_REPO="$_SP_MMB/mmb-core"
+  _SP_BIN="$_SP_SANDBOX/bin"
+  _SP_TMUX_LOG="$_SP_SANDBOX/tmux.log"
+
+  mkdir -p "$_SP_TOOLING/bin" \
+           "$_SP_TOOLING/state/heartbeats" \
+           "$_SP_TOOLING/logs" \
+           "$_SP_BIN"
+
+  cp "$TOOLING_DIR/bin/spawn-atomic.sh" "$_SP_TOOLING/bin/spawn-atomic.sh"
+  cp "$TOOLING_DIR/bin/task-start.sh"   "$_SP_TOOLING/bin/task-start.sh"
+  cp "$TOOLING_DIR/bin/agents.sh"       "$_SP_TOOLING/bin/agents.sh"
+  cp "$TOOLING_DIR/config.sh"           "$_SP_TOOLING/config.sh"
+  chmod +x "$_SP_TOOLING/bin/"*.sh
+
+  # Repo git real, mínimo viável pra task-start.sh: precisa de
+  # refs/remotes/origin/HEAD apontando pro default branch — senão
+  # mmb_default_branch retorna vazio e `git worktree add -b ... ""`
+  # quebra. Não precisamos de origin remoto de verdade.
+  mkdir -p "$_SP_REPO/docs/tasks"
+  (
+    cd "$_SP_REPO"
+    git init -q -b main
+    git config user.email "smoke@mmb.local"
+    git config user.name  "smoke"
+    git commit -q --allow-empty -m "init"
+    git update-ref refs/remotes/origin/main HEAD
+    git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+  )
+
+  # Stub do gh: ignora args, devolve TSV "state\tlabels\ttitle"
+  # respeitando STUB_GH_EXIT pra simular issue inexistente.
+  cat > "$_SP_BIN/gh" <<'GHEOF'
+#!/usr/bin/env bash
+# `${VAR-default}` (sem `:`) preserva strings vazias intencionalmente
+# passadas pelo cenário (ex: SP6 com STUB_GH_LABELS="").
+exit_code="${STUB_GH_EXIT-0}"
+if [ "$exit_code" != "0" ]; then
+  exit "$exit_code"
+fi
+state="${STUB_GH_STATE-OPEN}"
+labels="${STUB_GH_LABELS-task,project:mmb-core}"
+title="${STUB_GH_TITLE-stub title}"
+printf '%s\t%s\t%s\n' "$state" "$labels" "$title"
+GHEOF
+  chmod +x "$_SP_BIN/gh"
+
+  # Stub do tmux: rotear subcomandos, logar tudo, devolver dados plausíveis.
+  cat > "$_SP_BIN/tmux" <<'TXEOF'
+#!/usr/bin/env bash
+log="${STUB_TMUX_LOG:-/dev/null}"
+printf 'tmux %s\n' "$*" >> "$log"
+case "$1" in
+  has-session) exit "${STUB_TMUX_HAS_SESSION:-0}" ;;
+  list-windows) printf '%s\n' "${STUB_TMUX_WINDOWS_OUT:-}" ;;
+  list-panes)   printf '%s\n' "${STUB_TMUX_PANES_OUT:-%1:0}" ;;
+  *) : ;;
+esac
+exit 0
+TXEOF
+  chmod +x "$_SP_BIN/tmux"
+}
+
+_spawn_sandbox_teardown() {
+  if [[ -n "${_SP_SANDBOX:-}" && -d "$_SP_SANDBOX" ]]; then
+    # Worktrees criadas no sandbox são internas ao repo fake — rm -rf
+    # é seguro (nada vaza pro repo real).
+    rm -rf "$_SP_SANDBOX"
+  fi
+  _SP_SANDBOX=""
+  _SP_MMB=""
+  _SP_TOOLING=""
+  _SP_REPO=""
+  _SP_BIN=""
+  _SP_TMUX_LOG=""
+}
+
+# Roda o spawn-atomic da sandbox com PATH e env limpos.
+# Uso: _spawn_run <repo> <task-id> <issue> [extra env=val ...]
+_spawn_run() {
+  local repo="$1" task="$2" issue="$3"; shift 3
+  local extras=("$@") rc=0
+  # Limpa STUB_TMUX_LOG entre chamadas; cada cenário inspeciona o seu.
+  : > "$_SP_TMUX_LOG"
+  # `${VAR-default}` (sem `:`) preserva strings vazias intencionalmente
+  # passadas pelo cenário — só substitui se a var estiver unset.
+  env -i HOME="$HOME" PATH="$_SP_BIN:/usr/bin:/bin" \
+    STUB_GH_EXIT="${STUB_GH_EXIT-0}" \
+    STUB_GH_STATE="${STUB_GH_STATE-OPEN}" \
+    STUB_GH_LABELS="${STUB_GH_LABELS-task,project:mmb-core}" \
+    STUB_GH_TITLE="${STUB_GH_TITLE-stub title}" \
+    STUB_TMUX_HAS_SESSION="${STUB_TMUX_HAS_SESSION-0}" \
+    STUB_TMUX_WINDOWS_OUT="${STUB_TMUX_WINDOWS_OUT-}" \
+    STUB_TMUX_PANES_OUT="${STUB_TMUX_PANES_OUT-%1:0}" \
+    STUB_TMUX_LOG="$_SP_TMUX_LOG" \
+    TMUX="${TMUX-}" \
+    "${extras[@]}" \
+    bash "$_SP_TOOLING/bin/spawn-atomic.sh" "$repo" "$task" "$issue"
+}
+
+cmd_spawn_atomic() {
+  echo "================================================================"
+  echo " SMOKE — spawn-atomic (sandbox isolado, spawn-atomic.sh)"
+  echo "================================================================"
+
+  trap '_spawn_sandbox_teardown' EXIT
+
+  # ─── SP1: args insuficientes → exit 1 ──────────────────
+  echo
+  echo "── SP1: args insuficientes → exit 1 ──"
+  _spawn_sandbox_setup
+  local rc=0 out
+  out=$(env -i HOME="$HOME" PATH="$_SP_BIN:/usr/bin:/bin" \
+        bash "$_SP_TOOLING/bin/spawn-atomic.sh" 2>&1) || rc=$?
+  _assert "exit 1 sem args"            "[ $rc -eq 1 ]"
+  _assert "stdout/err contém 'Uso:'"   "echo \"\$out\" | grep -q 'Uso:'"
+
+  # ─── SP2: issue não-numérica → exit 2 ──────────────────
+  echo
+  echo "── SP2: issue não-numérica → exit 2 ──"
+  rc=0
+  out=$(env -i HOME="$HOME" PATH="$_SP_BIN:/usr/bin:/bin" \
+        bash "$_SP_TOOLING/bin/spawn-atomic.sh" mmb-core X1 abc 2>&1) || rc=$?
+  _assert "exit 2"                                "[ $rc -eq 2 ]"
+  _assert "mensagem 'não é um número'"            "echo \"\$out\" | grep -q 'não é um número'"
+
+  # ─── SP3: repo inexistente → exit 2 ────────────────────
+  echo
+  echo "── SP3: repo inexistente → exit 2 ──"
+  rc=0
+  out=$(_spawn_run mmb-nada X1 42 2>&1) || rc=$?
+  _assert "exit 2 com repo inexistente"           "[ $rc -eq 2 ]"
+  _assert "mensagem 'não é um repo git'"          "echo \"\$out\" | grep -q 'não é um repo git'"
+
+  # ─── SP4: gh issue view falha → exit 3 ─────────────────
+  echo
+  echo "── SP4: gh issue view falha (issue inexistente) → exit 3 ──"
+  # Cria a task primeiro pra task-start.sh não falhar antes do gh check
+  # — mas SP4 ocorre ANTES de task-start (validação de issue vem primeiro).
+  # Ainda assim, deixamos a task pronta pro fluxo padrão.
+  echo "# X1" > "$_SP_REPO/docs/tasks/X1-spawn-test.md"
+  rc=0
+  out=$(STUB_GH_EXIT=1 _spawn_run mmb-core X1 42 2>&1) || rc=$?
+  _assert "exit 3 com issue inacessível"          "[ $rc -eq 3 ]"
+  _assert "mensagem 'não existe (ou inacessível)'" \
+          "echo \"\$out\" | grep -q 'não existe (ou inacessível)'"
+
+  # ─── SP5: issue CLOSED → exit 3 ────────────────────────
+  echo
+  echo "── SP5: issue CLOSED → exit 3 ──"
+  rc=0
+  out=$(STUB_GH_STATE=CLOSED _spawn_run mmb-core X1 42 2>&1) || rc=$?
+  _assert "exit 3 com issue CLOSED"               "[ $rc -eq 3 ]"
+  _assert "mensagem 'não OPEN'"                   "echo \"\$out\" | grep -q 'não OPEN'"
+
+  # ─── SP6: labels faltando → warns mas prossegue (exit 0) ─
+  echo
+  echo "── SP6: labels faltando → 2 AVISOs, prossegue ──"
+  # Cenário precisa de fluxo completo: gh ok, mas sem tmux pra cair
+  # no fallback (mais simples de inspecionar via stdout). Sandbox fresca.
+  _spawn_sandbox_setup
+  echo "# X1" > "$_SP_REPO/docs/tasks/X1-spawn-test.md"
+  rc=0
+  out=$(STUB_GH_LABELS="" TMUX="" _spawn_run mmb-core X1 42 2>&1) || rc=$?
+  _assert "exit 0 mesmo com labels vazias"        "[ $rc -eq 0 ]"
+  _assert "AVISO de label 'task' ausente"         "echo \"\$out\" | grep -q \"AVISO.*label 'task'\""
+  _assert "AVISO de label 'project:mmb-core' ausente" \
+          "echo \"\$out\" | grep -q \"AVISO.*label 'project:mmb-core'\""
+
+  # ─── SP7: happy path no fallback (sem TMUX) ────────────
+  echo
+  echo "── SP7: happy path fallback (sem TMUX) ──"
+  _spawn_sandbox_setup
+  echo "# X1" > "$_SP_REPO/docs/tasks/X1-spawn-test.md"
+  rc=0
+  out=$(TMUX="" _spawn_run mmb-core X1 42 2>&1) || rc=$?
+  _assert "exit 0 no fallback"                    "[ $rc -eq 0 ]"
+  _assert "worktree criada"                       "[ -d '$_SP_REPO/.worktrees/X1-spawn-test' ]"
+  _assert "branch task/X1-spawn-test existe" \
+          "(cd '$_SP_REPO' && git branch --list 'task/X1-spawn-test') | grep -q task"
+  _assert "stdout instrui 'Em outra aba/terminal'" \
+          "echo \"\$out\" | grep -q 'Em outra aba/terminal'"
+  _assert "stdout mostra worktree path" \
+          "echo \"\$out\" | grep -q 'X1-spawn-test'"
+  # spawn-atomic só registra o atômico no caminho tmux; no fallback,
+  # apenas imprime instruções. Confirma que registry ficou vazio.
+  _assert "registry vazio no fallback (sem tmux, sem register)" \
+          "[ ! -s '$_SP_TOOLING/state/agents.jsonl' ]"
+
+  # ─── SP8: happy path com TMUX simulado ─────────────────
+  echo
+  echo "── SP8: happy path com TMUX simulado ──"
+  _spawn_sandbox_setup
+  echo "# X1" > "$_SP_REPO/docs/tasks/X1-spawn-test.md"
+  rc=0
+  out=$(TMUX="/fake/tmux" \
+        STUB_TMUX_WINDOWS_OUT="0:core" \
+        STUB_TMUX_PANES_OUT="%5:1" \
+        _spawn_run mmb-core X1 42 2>&1) || rc=$?
+  _assert "exit 0 no caminho tmux"                "[ $rc -eq 0 ]"
+  _assert "worktree criada"                       "[ -d '$_SP_REPO/.worktrees/X1-spawn-test' ]"
+  _assert "tmux.log registra split-window" \
+          "grep -q 'split-window' '$_SP_TMUX_LOG'"
+  _assert "tmux.log registra send-keys com MMB_AGENT_ID=core-X1" \
+          "grep -q 'send-keys.*MMB_AGENT_ID=core-X1' '$_SP_TMUX_LOG'"
+  _assert "tmux.log registra send-keys com 'claude '" \
+          "grep -q 'send-keys.*claude ' '$_SP_TMUX_LOG'"
+  # agents.sh grava ev="spawn" no registry (não "register" — esse
+  # é só o nome do subcomando da CLI). AG6 valida isso.
+  _assert "registry tem linha spawn pro id core-X1" \
+          "grep -q '\"id\":\"core-X1\"' '$_SP_TOOLING/state/agents.jsonl' && grep -q '\"ev\":\"spawn\"' '$_SP_TOOLING/state/agents.jsonl'"
+  _assert "stdout confirma '✓ Atômico spawnado'" \
+          "echo \"\$out\" | grep -q '✓ Atômico spawnado'"
+
+  _spawn_sandbox_teardown
+  echo
+  echo "=== SPAWN-ATOMIC PASS ==="
+}
+
 cmd_hardening() {
-  echo "=== HARDENING: light + medium + bridge + agents ==="
+  echo "=== HARDENING: light + medium + bridge + agents + spawn-atomic ==="
   cmd_light
   cmd_medium
   cmd_bridge
   cmd_agents
+  cmd_spawn_atomic
   echo "=== HARDENING PASS ==="
 }
 
@@ -1679,19 +1932,21 @@ case "$MODE" in
   stress)          cmd_stress ;;
   bridge)          cmd_bridge ;;
   agents)          cmd_agents ;;
+  spawn-atomic)    cmd_spawn_atomic ;;
   hardening)       cmd_hardening ;;
   comm|"")         cmd_comm ;;
   aquario)         cmd_aquario ;;
   *)
-    echo "Uso: $0 [light|medium|stress|bridge|agents|hardening|comm|aquario]" >&2
-    echo "  light      — sandbox isolado, mock claude, validação C1-C6 (rápido)" >&2
-    echo "  medium     — sandbox isolado, falhas controladas e recovery" >&2
-    echo "  stress     — sandbox isolado, volume e concorrência (demorado)" >&2
-    echo "  bridge     — unit test das regexes do aquario-bridge (sem sandbox)" >&2
-    echo "  agents     — unit-ish do agents.sh em sandbox isolado" >&2
-    echo "  hardening  — light + medium + bridge + agents (CI/validação pré-push)" >&2
-    echo "  comm       — canal ponta-a-ponta (requer commd vivo + claude real)" >&2
-    echo "  aquario    — canal + bridge WS (requer bridge + relay)" >&2
+    echo "Uso: $0 [light|medium|stress|bridge|agents|spawn-atomic|hardening|comm|aquario]" >&2
+    echo "  light         — sandbox isolado, mock claude, validação C1-C6 (rápido)" >&2
+    echo "  medium        — sandbox isolado, falhas controladas e recovery" >&2
+    echo "  stress        — sandbox isolado, volume e concorrência (demorado)" >&2
+    echo "  bridge        — unit test das regexes do aquario-bridge (sem sandbox)" >&2
+    echo "  agents        — unit-ish do agents.sh em sandbox isolado" >&2
+    echo "  spawn-atomic  — unit-ish do spawn-atomic.sh com stubs gh/tmux" >&2
+    echo "  hardening     — light + medium + bridge + agents + spawn-atomic (CI/pré-push)" >&2
+    echo "  comm          — canal ponta-a-ponta (requer commd vivo + claude real)" >&2
+    echo "  aquario       — canal + bridge WS (requer bridge + relay)" >&2
     exit 1
     ;;
 esac
