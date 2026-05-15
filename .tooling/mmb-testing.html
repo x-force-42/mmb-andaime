@@ -342,6 +342,7 @@
     <li><a class="cmd" href="#smoke-medium">smoke medium</a></li>
     <li><a class="cmd" href="#smoke-stress">smoke stress</a></li>
     <li><a class="cmd" href="#smoke-bridge">smoke bridge</a></li>
+    <li><a class="cmd" href="#smoke-agents">smoke agents</a></li>
     <li><a class="cmd" href="#smoke-hardening">smoke hardening</a></li>
     <li><a class="cmd" href="#smoke-comm">smoke comm</a></li>
     <li><a class="cmd" href="#smoke-aquario">smoke aquario</a></li>
@@ -381,9 +382,9 @@
   <h1><code>smoke</code> + <code>mmb</code> — o que tem pra testar</h1>
   <p class="lede">Inventário completo das ferramentas de teste, verificação e sanitização do andaime. O que cada uma faz, quando rodar, e como combiná-las em cenários canônicos.</p>
   <div class="pill-row">
-    <span class="pill">7 modos de smoke</span>
+    <span class="pill">8 modos de smoke</span>
     <span class="pill">9 subcomandos de inspeção</span>
-    <span class="pill ok">5 modos gratuitos</span>
+    <span class="pill ok">6 modos gratuitos</span>
     <span class="pill warn">2 modos custam tokens</span>
   </div>
 </header>
@@ -465,6 +466,11 @@
         <td><span class="pill ok">free</span></td>
       </tr>
       <tr>
+        <td>Mexi em <code>agents.sh</code> (registry, heartbeat, flock)</td>
+        <td><code>smoke agents</code> (já incluso no hardening)</td>
+        <td><span class="pill ok">free</span></td>
+      </tr>
+      <tr>
         <td>Quero ver o stack de mensageria <strong>de verdade</strong></td>
         <td><code>smoke comm</code> (precisa <code>commd</code> vivo)</td>
         <td><span class="pill warn">~$0.01</span></td>
@@ -517,6 +523,7 @@
       <tr><td><code>smoke medium</code></td><td>~22s</td><td>não (sandbox)</td><td>não</td><td>não</td></tr>
       <tr><td><code>smoke stress</code></td><td>~70s</td><td>não (sandbox)</td><td>não</td><td>não</td></tr>
       <tr><td><code>smoke bridge</code></td><td>&lt;1s</td><td>não</td><td>não</td><td>não</td></tr>
+      <tr><td><code>smoke agents</code></td><td>~1s</td><td>não (sandbox)</td><td>não</td><td>não</td></tr>
       <tr><td><code>smoke hardening</code></td><td>~30s</td><td>não (sandbox)</td><td>não</td><td>não</td></tr>
       <tr><td><code>smoke comm</code></td><td>~20s</td><td>sim (inbox real)</td><td>sim (claude)</td><td><span style="color:var(--yellow)">~$0.01 Haiku</span></td></tr>
       <tr><td><code>smoke aquario</code></td><td>~30s</td><td>sim (inbox + WS)</td><td>sim (claude)</td><td><span style="color:var(--yellow)">~$0.01 Haiku</span></td></tr>
@@ -534,8 +541,8 @@
 
 <div class="cmd-block" id="smoke">
   <h3><code>smoke.sh &lt;modo&gt;</code></h3>
-  <p class="synopsis">.tooling/bin/smoke.sh <span class="arg">{light|medium|stress|bridge|hardening|comm|aquario}</span></p>
-  <p>Canário único do andaime. Os modos <strong>sandbox</strong> (light/medium/stress/bridge/hardening) rodam num diretório temporário <code>/tmp/mmb-smoke-XXXXXX/</code> com cópias dos scripts e um mock do <code>claude</code> CLI — não tocam o andaime real. Os modos <strong>live</strong> (comm/aquario) batem no andaime real e custam tokens.</p>
+  <p class="synopsis">.tooling/bin/smoke.sh <span class="arg">{light|medium|stress|bridge|agents|hardening|comm|aquario}</span></p>
+  <p>Canário único do andaime. Os modos <strong>sandbox</strong> (light/medium/stress/bridge/agents/hardening) rodam num diretório temporário <code>/tmp/mmb-smoke-XXXXXX/</code> com cópias dos scripts e um mock do <code>claude</code> CLI — não tocam o andaime real. Os modos <strong>live</strong> (comm/aquario) batem no andaime real e custam tokens.</p>
 
   <h4>Estrutura do sandbox (modos free)</h4>
   <pre>/tmp/mmb-smoke-XXX/
@@ -635,17 +642,40 @@
   <p><strong>Origem:</strong> nasceu junto com o fix do Bug C (<code>fix(aquario-bridge): timeout de worker vira died_defeated</code>) pra ter cobertura unit barata sem precisar do venv do bridge.</p>
 </div>
 
+<div class="cmd-block" id="smoke-agents">
+  <h3><code>smoke.sh agents</code> — registry de agentes (AG1–AG9)</h3>
+  <p class="synopsis">.tooling/bin/smoke.sh agents</p>
+  <p>Roda em ~1s. Cobre <code>agents.sh</code> em sandbox temporário <code>/tmp/mmb-smoke-agents-XXXXXX/</code> — copia o script pra dentro de uma estrutura <code>tooling/{bin,state,logs}</code> fake. <code>TOOLING_DIR</code> é derivado de <code>$(dirname BASH_SOURCE)/..</code> no próprio script, então cada cenário começa de registry zerado sem tocar nem modificar o script real.</p>
+  <table>
+    <thead><tr><th>Cenário</th><th>O que valida</th></tr></thead>
+    <tbody>
+      <tr><td><code>AG1</code> register/deregister básico</td><td>Linha JSONL bem-formada por chamada; heartbeat file criado em <code>register</code> e removido em <code>deregister</code>.</td></tr>
+      <tr><td><code>AG2</code> heartbeat = touch</td><td><code>heartbeat</code> só avança <code>mtime</code> do <code>.alive</code>, <strong>não</strong> escreve linha no registry (alta frequência → o mtime é o sinal).</td></tr>
+      <tr><td><code>AG3</code> list filtra vivos vs --all</td><td><code>list</code> oculta IDs com último evento <code>deregister</code>; <code>list --all</code> inclui todos.</td></tr>
+      <tr><td><code>AG4</code> check-children sem zumbi</td><td>Com 2 filhos saudáveis, <code>check-children &lt;parent&gt; --threshold 600</code> sai com <code>exit 0</code>.</td></tr>
+      <tr><td><code>AG5</code> check-children detecta zumbi</td><td><code>touch -d "2 hours ago"</code> no <code>.alive</code> + <code>--threshold 60</code> → exit !=0 e saída contém <code>STUCK: &lt;id&gt;</code>.</td></tr>
+      <tr><td><code>AG6</code> status reduz log</td><td>Após <code>register</code> → <code>heartbeat</code> → <code>deregister</code>, <code>status</code> mostra <strong>último</strong> evento (deregister), não o spawn original (testa <code>_reduce_last</code>).</td></tr>
+      <tr><td><code>AG7</code> flock sob concorrência</td><td>10 <code>register</code> em paralelo: registry tem exatamente 10 linhas, todas JSON válidas, 10 IDs distintos preservados (zero stomp).</td></tr>
+      <tr><td><code>AG8</code> escape de campo free-form</td><td><code>deregister</code> com <code>reason</code> contendo aspas, backslash, newline e tab: JSONL ainda parseável; conteúdo escapado corretamente por <code>_json_str</code>.</td></tr>
+      <tr><td><code>AG9</code> validação de argumentos</td><td><code>register</code>/<code>deregister</code> sem args → exit 2; <code>status &lt;id-inexistente&gt;</code> → exit 3; comando desconhecido → exit 2; sem args → exit 1 (help).</td></tr>
+    </tbody>
+  </table>
+  <div class="callout ok"><p><span class="label">use quando</span>Mexeu em <code>agents.sh</code> — registry, heartbeat, flock, <code>_reduce_last</code>, <code>_json_str</code>, <code>check-children</code>. Também roda automático em <code>hardening</code>.</p></div>
+  <p><strong>Origem:</strong> nasceu na v0.5 pra fechar o gap "camada atômica sem cobertura formal" registrado no tag v0.4. Cobre <code>agents.sh</code>; <code>spawn-atomic.sh</code> fica como follow-up (precisa stub de <code>gh</code>/<code>tmux</code>/<code>claude</code>).</p>
+</div>
+
 <div class="cmd-block" id="smoke-hardening">
-  <h3><code>smoke.sh hardening</code> — CI gate (light + medium + bridge)</h3>
+  <h3><code>smoke.sh hardening</code> — CI gate (light + medium + bridge + agents)</h3>
   <p class="synopsis">.tooling/bin/smoke.sh hardening</p>
   <p>Roda em ~30s. <strong>É o gate canônico pré-push pra mudanças em mensageria.</strong> Inclui:</p>
   <ul>
     <li>Tudo de <code>light</code> (L1–L6) — 6 cenários, ~5s</li>
     <li>Tudo de <code>medium</code> (M1–M7) — 7 cenários, ~22s</li>
     <li>Tudo de <code>bridge</code> (B1) — unit regex, &lt;1s</li>
+    <li>Tudo de <code>agents</code> (AG1–AG9) — registry + flock, ~1s</li>
   </ul>
   <p>Não inclui <code>stress</code> porque é mais demorado e cobre superfície sobrepondo o que light/medium já garantem. Mas <strong>se mexeu em concorrência, rode stress também.</strong></p>
-  <div class="callout"><p><span class="label">racional</span><code>hardening</code> tem que ser barato o suficiente pra você rodar antes de cada commit que toca <code>commd.sh</code>/<code>worker.sh</code>/<code>msg.sh</code>/<code>config.sh</code>/<code>aquario-bridge.py</code> — ~30s é o teto aceitável pra ser rotina.</p></div>
+  <div class="callout"><p><span class="label">racional</span><code>hardening</code> tem que ser barato o suficiente pra você rodar antes de cada commit que toca <code>commd.sh</code>/<code>worker.sh</code>/<code>msg.sh</code>/<code>config.sh</code>/<code>aquario-bridge.py</code>/<code>agents.sh</code> — ~30s é o teto aceitável pra ser rotina.</p></div>
 </div>
 
 <div class="cmd-block" id="smoke-comm">
@@ -803,7 +833,7 @@
   <h3><code>agents.sh</code> — registry de agentes</h3>
   <p class="synopsis">.tooling/bin/agents.sh <span class="arg">{register|deregister|heartbeat|list}</span> [args...]</p>
   <p>Estado vivo dos agentes (master, orqs, atômicos) em <code>state/agents.jsonl</code> + heartbeats em <code>state/heartbeats/&lt;id&gt;.alive</code> (mtime). À prova de race via <code>flock</code>.</p>
-  <p><strong>Estado: sem cobertura de smoke ainda.</strong> Próxima geração de testes (A1, A2 nos designs) cobre.</p>
+  <p><strong>Cobertura:</strong> <a href="#smoke-agents"><code>smoke agents</code></a> AG1–AG9 (sandbox isolado, parte do <code>hardening</code> desde v0.5). <code>spawn-atomic.sh</code> ainda sem cobertura — follow-up A2.</p>
 </div>
 
 <h2 style="margin-top:72px" id="guardrails">Guardrails embutidos em scripts</h2>
@@ -873,7 +903,7 @@
 <h2 style="margin-top:72px" id="gaps">Gaps conhecidos</h2>
 <p>O que ainda não tem cobertura:</p>
 <ul>
-  <li><strong>Camada atômica (<code>agents.sh</code> + <code>spawn-atomic.sh</code>)</strong>: spawn, heartbeat, deregister, detecção de zumbi. Designs A1/A2 propostos, não implementados.</li>
+  <li><strong>spawn-atomic.sh</strong>: validação de issue, criação de worktree, split tmux, init do atômico. Precisa stub de <code>gh</code>/<code>tmux</code>/<code>claude</code>. <code>agents.sh</code> já tem cobertura (<a href="#smoke-agents"><code>smoke agents</code></a> AG1–AG9, v0.5).</li>
   <li><strong>Fan-out cross-repo real (C3)</strong>: master → 3 orqs em paralelo com workers reais. Próxima etapa.</li>
   <li><strong>Stress S2–S5</strong>: volume distribuído, mix de outcomes, restart em meio, start/stop repetido.</li>
   <li><strong>Bridge → journal</strong>: refactor pra consumir só <code>journal.jsonl</code> (hoje tail dos workers logs também). Follow-up arquitetural.</li>
