@@ -58,15 +58,31 @@ Casa se TODOS:
 - `thread: <slug>` não-vazio
 - body contém URL `https://github.com/.../pull/<N>` onde o N do path
   casa com o N do subject
+- body contém **`suite_status: verde`** (literal — schema semântico
+  v0.4+, ver `protocol.md`)
 
 **Ação:**
-1. Append linha no digest do dia (`state/digest-<YYYY-MM-DD>.md` UTC).
+1. Append linha no digest do dia (`state/digest-<YYYY-MM-DD>.md` UTC,
+   glyph ✓).
 2. Não toca briefing — tickbox de PR só atualiza no fechamento da
    task (Rotina 4).
 
+**Suíte não-verde:** se body tem `suite_status: vermelha` ou
+`suite_status: pulada`, **ESCALA** com priority=high, motivo
+"PR aberto com suíte não-verde — qualidade comprometida". Append no
+digest com glyph ⚠.
+
+**`suite_status` ausente do body:** se body tem URL casando mas não
+declara `suite_status`, **ESCALA** com priority=normal, motivo
+"pr-aberto sem suite_status no body — schema do contrato não
+cumprido". Append no digest com glyph ⚠.
+
 **Briefing ausente:** OK — digest only.
 
-**Output stdout:** `triagem: routine pr-aberto-N — digest atualizado`
+**Output stdout:**
+- `triagem: routine pr-aberto-N — digest atualizado`
+- `triagem: routine pr-aberto-N → escalated (suíte não-verde)`
+- `triagem: routine pr-aberto-N → escalated (suite_status ausente)`
 
 ### Rotina 2 — `status: issue-criada-N`
 
@@ -126,24 +142,32 @@ Casa se TODOS:
      `^- \[ \].*<FROM>` (fallback se N não casa)
    - Se achou: `[ ]` → `[x]` na linha
    - Se não achou: digest "task closed in <FROM>, no checkbox found"
-3. **Verifica se é última do épico (estado pós-update):**
-   - Acha seção `## Checklist` ou `## Checklist de issues` no
-     briefing (literal, case-sensitive)
-   - Conta `^- \[ \]` SÓ dentro dessa seção (parar no próximo `## `)
-   - Se seção não existe → **ESCALA** com priority=normal, motivo
-     "checklist section not found, can't infer epic completion"
-   - Se seção existe e count == 0 → **ESCALA** com priority=high,
-     motivo "épico <thread> com todos os tickboxes ✓; revise
-     narrativa e marque ✅ no status do briefing"
-   - Se count > 0 → NÃO escala (só rotina mesmo)
+3. **Verifica se é última do épico**, preferindo `last_in_epic` do
+   body (schema semântico v0.4+):
+   - Se body tem **`last_in_epic: true`** → **ESCALA** com
+     priority=high, motivo "épico <thread> finalizado (last_in_epic);
+     revise narrativa e marque ✅ no status do briefing". Glyph ⚠
+     no digest.
+   - Se body tem **`last_in_epic: false`** → NÃO escala (rotina ✓).
+   - Se body NÃO tem `last_in_epic` (status legado / contrato
+     descumprido), fallback pra heurística antiga:
+     - Acha seção `## Checklist` ou `## Checklist de issues` no
+       briefing (literal, case-sensitive)
+     - Conta `^- \[ \]` SÓ dentro dessa seção (parar no próximo `## `)
+     - Se seção não existe → **ESCALA** priority=normal,
+       "checklist section not found, can't infer epic completion"
+     - Se seção existe e count == 0 → **ESCALA** priority=high,
+       "todos os tickboxes ✓; revise narrativa"
+     - Se count > 0 → NÃO escala
 
 **Briefing ausente:** **ESCALA** com priority=normal, motivo
 "task-fechada sem briefing local em <thread> — possível perda de
 rastreabilidade".
 
 **Output stdout:**
-- `triagem: routine task-fechada — tickbox em #<N>, <K> tasks restantes`
-- `triagem: routine task-fechada → escalated (épico pronto pra fechamento)`
+- `triagem: routine task-fechada — tickbox em #<N>, last_in_epic:false`
+- `triagem: routine task-fechada → escalated (last_in_epic:true)`
+- `triagem: routine task-fechada → escalated (tickbox count: 0, fallback)`
 - `triagem: routine task-fechada → escalated (checklist section not found)`
 - `triagem: routine task-fechada → escalated (briefing ausente)`
 

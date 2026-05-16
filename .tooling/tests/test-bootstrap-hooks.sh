@@ -25,6 +25,7 @@ run_script() {
 # Paths dos hooks pra comparação
 BLOCK_PR_MERGE="$TOOLING_DIR/hooks/block-pr-merge.sh"
 INJECT_PENDING="$TOOLING_DIR/hooks/inject-pending-human.sh"
+INJECT_DIGEST="$TOOLING_DIR/hooks/inject-digest-tail.sh"
 
 # Helper: conta entradas com `command == $cmd` no event
 count_hook() {
@@ -58,6 +59,12 @@ section_no_settings() {
   else
     fail "UserPromptSubmit não registrado"
   fi
+
+  if [ "$(count_hook UserPromptSubmit "$INJECT_DIGEST")" = "1" ]; then
+    pass "UserPromptSubmit inject-digest-tail registrado"
+  else
+    fail "UserPromptSubmit inject-digest-tail não registrado"
+  fi
 }
 
 # ── 2. Idempotência: rodar 2x não duplica ────────────────────────
@@ -77,10 +84,16 @@ section_idempotent() {
   else
     fail "inject-pending-human duplicou"
   fi
+  if [ "$(count_hook UserPromptSubmit "$INJECT_DIGEST")" = "1" ]; then
+    pass "inject-digest-tail ainda count=1 após 2ª rodada"
+  else
+    fail "inject-digest-tail duplicou"
+  fi
 
   run_script >/dev/null  # 3ª vez
   if [ "$(count_hook PreToolUse "$BLOCK_PR_MERGE")" = "1" ] \
-    && [ "$(count_hook UserPromptSubmit "$INJECT_PENDING")" = "1" ]; then
+    && [ "$(count_hook UserPromptSubmit "$INJECT_PENDING")" = "1" ] \
+    && [ "$(count_hook UserPromptSubmit "$INJECT_DIGEST")" = "1" ]; then
     pass "3ª rodada também idempotente"
   else
     fail "duplicou na 3ª rodada"

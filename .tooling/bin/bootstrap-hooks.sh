@@ -3,8 +3,9 @@
 # .claude/settings.local.json do projeto.
 #
 # Hooks registrados:
-#   PreToolUse(Bash)  → block-pr-merge.sh    (guardrail A10/A8 técnico)
+#   PreToolUse(Bash)  → block-pr-merge.sh       (guardrail A10/A8 técnico)
 #   UserPromptSubmit  → inject-pending-human.sh (B2B do mestre não-cego)
+#   UserPromptSubmit  → inject-digest-tail.sh   (rotinas do digest no Mestre)
 #
 # Idempotente: detecta hooks já registrados (mesmo command path) e
 # não duplica. Preserva todos os outros hooks/settings existentes.
@@ -25,6 +26,7 @@ SETTINGS_FILE="$CLAUDE_DIR/settings.local.json"
 
 BLOCK_PR_MERGE="$TOOLING_DIR/hooks/block-pr-merge.sh"
 INJECT_PENDING="$TOOLING_DIR/hooks/inject-pending-human.sh"
+INJECT_DIGEST="$TOOLING_DIR/hooks/inject-digest-tail.sh"
 
 DRY_RUN=0
 
@@ -36,8 +38,9 @@ Uso: $0 [--dry-run]
     $SETTINGS_FILE
 
   Hooks registrados:
-    PreToolUse(Bash)  → block-pr-merge.sh    (A10/A8)
+    PreToolUse(Bash)  → block-pr-merge.sh       (A10/A8)
     UserPromptSubmit  → inject-pending-human.sh (mestre não-cego)
+    UserPromptSubmit  → inject-digest-tail.sh   (digest rotineiro)
 
   Idempotente: detecta hooks já registrados (mesmo command path)
   e não duplica. Preserva outros hooks/settings existentes.
@@ -63,7 +66,7 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 2
 fi
 
-for h in "$BLOCK_PR_MERGE" "$INJECT_PENDING"; do
+for h in "$BLOCK_PR_MERGE" "$INJECT_PENDING" "$INJECT_DIGEST"; do
   if [ ! -x "$h" ]; then
     echo "ERRO: hook não existe ou não é executável: $h" >&2
     exit 2
@@ -115,6 +118,7 @@ echo ""
 
 add_hook "PreToolUse"       "Bash" "$BLOCK_PR_MERGE"
 add_hook "UserPromptSubmit" ""     "$INJECT_PENDING"
+add_hook "UserPromptSubmit" ""     "$INJECT_DIGEST"
 
 echo ""
 
