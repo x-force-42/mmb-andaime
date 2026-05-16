@@ -135,15 +135,18 @@ BODY=$(cat)
   [ -n "$BODY" ] && [ "${BODY: -1}" != $'\n' ] && echo ""
 } > "$FILE"
 
-# Atualiza indicador no tmux (status-bar da tab master fica visível).
+# Atualiza indicador no tmux: rename "master" → "master ⚠" + bg=red.
+# inject-pending-human.sh reverte ambos quando hook processa pendências.
 # No-op se MMB_TMUX_SESSION vazio ou tmux não disponível.
 if [ "$NO_TMUX" -eq 0 ] && command -v tmux >/dev/null 2>&1; then
   SESSION="${MMB_TMUX_SESSION:-}"
   if [ -n "$SESSION" ] && tmux has-session -t "$SESSION" 2>/dev/null; then
-    # Se tab master não existe na sessão, no-op.
-    if tmux list-windows -t "$SESSION" -F '#{window_name}' 2>/dev/null | grep -qx "master"; then
-      tmux set-window-option -t "${SESSION}:master" window-status-style "bg=red,fg=white" 2>/dev/null || true
-      tmux set-window-option -t "${SESSION}:master" window-status-current-style "bg=red,fg=white" 2>/dev/null || true
+    # Aceita "master" (state limpo) ou "master ⚠" (já marcada — idempotente).
+    if tmux list-windows -t "$SESSION" -F '#{window_name}' 2>/dev/null | grep -qE '^master( ⚠)?$'; then
+      # Rename pra "master ⚠". Se já tá renomeado, tmux ignora o no-op.
+      tmux rename-window -t "${SESSION}:master" "master ⚠" 2>/dev/null || true
+      tmux set-window-option -t "${SESSION}:master ⚠" window-status-style "bg=red,fg=white" 2>/dev/null || true
+      tmux set-window-option -t "${SESSION}:master ⚠" window-status-current-style "bg=red,fg=white" 2>/dev/null || true
     fi
   fi
 fi
