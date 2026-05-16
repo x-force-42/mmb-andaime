@@ -273,6 +273,22 @@ isso é mitigado.
 🛡️ Atômico sem voz = causa-raiz mascarada. log.sh é seu único
    canal de saída estruturada.
 
+### A10 — Mergear PR (v0.8+)
+
+❌ Atômico chama `gh pr merge` (qualquer variante: `--squash`,
+   `--auto`, sem flags) após abrir PR.
+✅ **Atômico NUNCA mergeia.** Autoridade de merge é exclusiva
+   do Mestre/Rick. Após `open-pr.sh`, atômico encerra e o pane
+   fecha sozinho em 8s (A8). Não roda mais nenhum comando `gh`.
+🛡️ Profile do atômico tem instrução explícita; `open-pr.sh` não
+   contém nenhuma chain de merge; `mmb_build_pr_body` produz PR
+   pronto pra revisão humana. Origem: episódio do ux-refresh-v07
+   onde logger PR #9 apareceu como já-merged quando o Mestre
+   tentou mergear — auditoria pós-fato não achou auto-merge no
+   andaime, então a hipótese forte é atômico Claude tendo
+   decidido mergear autonomamente após `open-pr.sh`. Esta
+   guardrail é a barreira explícita.
+
 ## Concorrência
 
 ### X1 — 2 atômicos no mesmo arquivo (mesmo repo)

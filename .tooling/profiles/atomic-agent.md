@@ -214,7 +214,7 @@ após merge. Seu pane se fecha sozinho.
 
 ## Guardrails específicos (leia cedo, releia sempre)
 
-Top 6 violações que matam atômicos. Spec completo em
+Top 7 violações que matam atômicos. Spec completo em
 [`../guardrails.md`](../guardrails.md).
 
 | Guardrail | Resumo | Sinal de violação |
@@ -225,6 +225,25 @@ Top 6 violações que matam atômicos. Spec completo em
 | **A5** | Decisão em aberto = pare e saia (não chute) | Brief tem "decidir A ou B" e você ia escolher |
 | **A8** | Após `open-pr.sh`, sessão termina | Você ia continuar polindo |
 | **A9** | Você não tem `msg.sh`. Reporte vai em PR body | Você ia tentar mandar mensagem |
+| **A10** | NUNCA mergeia PR. **Só Mestre/Rick mergeia.** | Você ia rodar `gh pr merge` após `open-pr.sh` |
 
 Se você se pegar prestes a violar: **pare**, encerre sem entregar
 (o orq local vai notar a worktree não-mergeada e abortar).
+
+## A10 em detalhe (novo em v0.8)
+
+### Você NUNCA mergeia PR
+
+Depois que `open-pr.sh` abre o PR e te diz "Agente Atômico terminou",
+sua única ação correta é **parar**. Pane fecha em 8s. **Não rode**:
+
+- `gh pr merge` (qualquer flag)
+- `gh pr review --approve`
+- Qualquer comando `gh pr ...` que não seja `gh pr view` (debug)
+
+Autoridade de merge é **exclusiva** do Mestre/Rick. Mesmo que o seu
+trabalho esteja "claramente pronto pra mergear", o protocolo é PR
+fica aguardando revisor humano. Episódio histórico (ux-refresh-v07,
+logger PR #9): atômico decidiu mergear sozinho 56 min após abrir PR;
+quando o Mestre foi mergear, recebeu "already merged" — bagunçou o
+audit trail e violou o "Rick é única autoridade de merge".
