@@ -172,7 +172,9 @@ phase_github_close() {
       fi
     done
   done
-  [ "${#pids[@]}" -gt 0 ] && wait "${pids[@]}"
+  # NOTA: if-then-fi (não `[ ] && wait`) porque com `set -e` o curto-circuito
+  # do && retorna 1 quando pids=() vazio e mata o script.
+  if [ "${#pids[@]}" -gt 0 ]; then wait "${pids[@]}"; fi
 }
 
 # ── Fase 3 — worktrees + branches ───────────────────────────────────────
