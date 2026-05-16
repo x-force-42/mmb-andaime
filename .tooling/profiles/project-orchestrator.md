@@ -122,8 +122,9 @@ marco, especificado em [`protocol.md`](../protocol.md) seção
 heurística e escala pending-human por falso positivo.
 
 ```bash
-# Status: marco importante pro mestre saber
-# (campos obrigatórios variam por marco — ver contrato no protocol.md)
+# Status issue-criada-N — emitido após criar issue + spawn atômico.
+# Campos obrigatórios (ver contrato em protocol.md): issue_url,
+# issue_number, repo, thread.
 msg.sh master status issue-criada-3 - <thread> <<EOF
 issue_url: https://github.com/x-force-42/mmb-core/issues/3
 issue_number: 3
@@ -131,6 +132,22 @@ repo: mmb-core
 thread: cleanup-scripts
 
 Atômico 1.1 spawnado em worktree mmb-core/.worktrees/1.1-cleanup-scripts.
+EOF
+
+# Status pr-aberto-N — emitido após detectar PR aberto pelo atômico.
+# Campos obrigatórios: pr_url, pr_number, issue_number, suite_status.
+# suite_status: verde | vermelha | pulada. Vermelha/pulada/ausente
+# fazem worker-master escalar pra pending-human (qualidade comprometida).
+# Levante o veredicto da suíte rodando localmente OU lendo do PR body
+# (open-pr.sh embute output de suíte em ## Suíte verde — A11).
+msg.sh master status pr-aberto-7 - <thread> <<EOF
+pr_url: https://github.com/x-force-42/mmb-core/pull/7
+pr_number: 7
+issue_number: 3
+suite_status: verde
+
+Atômico abriu PR #7 fechando issue #3. Suíte rodou verde no body do PR
+(152 testes em 23s).
 EOF
 
 # Pergunta: briefing ambíguo, decisão fora do meu escopo
@@ -255,6 +272,33 @@ Depois fique passivo. O atômico:
 - abre PR via `open-pr.sh`
 - comenta na issue
 - kill-pane em 8s
+
+### 4.5. PR aberto (detectado por você)
+
+Quando perceber que o atômico abriu PR (`gh pr list`, pane fechou,
+comment na issue), emita `status: pr-aberto-<N>` pro Mestre — siga
+o contrato semântico em [`protocol.md`](../protocol.md):
+
+```bash
+# Levantar veredicto da suíte do PR body (open-pr.sh embute output
+# completo em ## Suíte verde — guardrail A11):
+pr_body=$(gh pr view <pr-N> --repo x-force-42/<repo> --json body -q .body)
+suite=$(echo "$pr_body" | grep -q "## Suíte verde" && echo "verde" || echo "ausente")
+
+msg.sh master status pr-aberto-<pr-N> - <thread> <<EOF
+pr_url: https://github.com/x-force-42/<repo>/pull/<pr-N>
+pr_number: <pr-N>
+issue_number: <issue-N>
+suite_status: $suite
+
+Atômico abriu PR fechando issue #<issue-N>.
+EOF
+```
+
+`suite_status` ausente ou diferente de `verde` faz worker-master
+escalar pra pending-human. **Não improvise**: o veredicto vem do PR
+body real, não da sua intuição. Se não conseguir confirmar (rede ou
+gh CLI falhou), declare `suite_status: ausente` honestamente.
 
 ### 5. Pós-merge
 

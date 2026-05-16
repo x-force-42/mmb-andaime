@@ -260,8 +260,7 @@ estado mais avançado e registra warning.
 Entradas:
   algum_aberto = existe ciclo do épico em {iniciado, planejado, pr_aberto}
   fechamento_explicito = master marcou ✅ no master-briefing.md
-                          (ou: issue do épico no GH foi closed com tag
-                          específica, se adotado depois)
+                          (linha que casa `^\s*[-*]?\s*Status:\s*.*✅`)
 
 Saída:
   algum_aberto                          → aberto
@@ -276,6 +275,33 @@ acontecer no meio de um épico que vai ganhar mais tasks. O ✅ é o ato
 humano que diz "acabou de verdade". Sem ele, épico fica "aberto idle" —
 sinal pro cockpit mostrar painel "épicos com todos ciclos prontos,
 fechamento pendente".
+
+### Implementação no reconciler (v0.4+)
+
+A leitura do `fechamento_explicito` é projetada por
+`_enrich_epicos_closure(conn, tooling_root)` em
+`mmb-logger/src/mmb_logger/reconcile/reconcile.py` (mmb-logger PR #13).
+Roda na mesma fase de `_enrich_epicos_intencao`, após upsert de épicos.
+
+Regra de transição (idempotente):
+
+| Briefing | Row DB | Ação |
+|---|---|---|
+| ✅ presente | `aberto` ou `closed_at IS NULL` | UPDATE `status='fechado', closed_at=<reconcile-time>` |
+| ✅ presente | `fechado` + `closed_at NOT NULL` | no-op (preserva `closed_at` original) |
+| ✅ ausente | `fechado` | UPDATE `status='aberto', closed_at=NULL` (**reabre** — projeção segue fonte canônica) |
+| ✅ ausente | `aberto` | no-op |
+| Briefing ausente | qualquer | tratado como `✅ ausente` |
+
+`closed_at` = momento da **primeira observação** do ✅ pelo reconciler
+(`datetime.now(UTC).isoformat()`). Não tenta parsear timestamp do
+briefing (sem schema confiável) nem usa `mtime` (instável a edits
+pós-fechamento). Reabertura sob remoção do ✅ é deliberada — estado
+derivado acompanha a fonte canônica.
+
+Campos humanos (`assertiveness_score`, `review_note`) e demais campos
+derivados (`intencao`, `andaime_version`) **não são tocados** por essa
+função.
 
 ## Custo via transcripts (fase 4)
 
