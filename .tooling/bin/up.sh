@@ -125,5 +125,13 @@ if [ "$MMB_MODE" != "fast" ] && [ -d "$MMB_ROOT/mmb-aquarium" ]; then
     "$TOOLING_DIR/bin/aquario-bridge.sh" C-m
 fi
 
+# ─── Window logger: mmb-logger watch + serve — só fora do modo fast
+if [ "$MMB_MODE" != "fast" ] && [ -d "$MMB_ROOT/mmb-logger" ]; then
+  tmux new-window -t "$SESSION" -n logger -c "$MMB_ROOT/mmb-logger"
+  # watch em background, serve em foreground (logs visíveis na window)
+  tmux send-keys -t "$SESSION:logger" \
+    "uv run mmb-logger watch &>/tmp/mmb-logger-watch.log & uv run mmb-logger serve" C-m
+fi
+
 tmux select-window -t "$SESSION:master"
 exec tmux attach -t "$SESSION"

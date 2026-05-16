@@ -73,6 +73,9 @@ fi
 
 IFS=$'\t' read -r ISSUE_STATE LABELS TITLE <<< "$ISSUE_DATA"
 
+# Extrai epic slug dos labels (ex: "task,project:mmb-aquarium,epic:mmb-logger-destilacao")
+EPIC_SLUG=$(echo ",$LABELS," | grep -oP '(?<=,epic:)[^,]+' || true)
+
 if [ "$ISSUE_STATE" != "OPEN" ]; then
   echo "ERRO: issue #$ISSUE está '$ISSUE_STATE', não OPEN. Não posso spawnar atômico." >&2
   exit 3
@@ -105,6 +108,12 @@ else
 fi
 WORKTREE="$REPO_PATH/.worktrees/$SLUG"
 
+# Mitigação: asdf shim de `claude` pode ficar stale após npm install -g.
+# Pane novo abre zsh fresh e tenta `claude` via PATH (shim), que dispara
+# erro "No claude executable found for nodejs <ver>". Reshim defensivo
+# garante shim atualizado antes do send-keys. Observado em 2026-05-15.
+asdf reshim nodejs 2>/dev/null || true
+
 ATOMIC_FLAGS=$(mmb_claude_flags atomic)
 
 # Agent ID do atômico: <repo-short>-<task-id> (ex: core-X1).
@@ -122,10 +131,15 @@ if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; th
   WINDOW_ID=$(tmux list-windows -t "$MMB_TMUX_SESSION" -F '#{window_index}:#{window_name}' \
     | grep ":$short\$" | head -1 | cut -d: -f1 || true)
 
-  # Helper local: exporta MMB_TAB + MMB_AGENT_ID antes do claude
+  # Helper local: exporta MMB_TAB + MMB_AGENT_ID + MMB_PANE_ID antes do claude.
+  # MMB_PANE_ID é passado explicitamente pra evitar que open-pr.sh use
+  # `tmux display-message` — que retorna o pane FOCADO pelo client, não o
+  # pane do script, e acabava matando a sessão do master quando o usuário
+  # estava com a janela master em foco.
   _send_atomic_init() {
     local pane="$1"
-    tmux send-keys -t "$pane" "export MMB_TAB=$short MMB_AGENT_ID=$AGENT_ID" C-m
+    local pane_id="$2"
+    tmux send-keys -t "$pane" "export MMB_TAB=$short MMB_AGENT_ID=$AGENT_ID GH_SUBISSUE=$ISSUE MMB_PANE_ID=$pane_id EPIC_SLUG=$EPIC_SLUG" C-m
     tmux send-keys -t "$pane" "claude $ATOMIC_FLAGS \"$PROMPT\"" C-m
   }
 
@@ -133,7 +147,9 @@ if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; th
     echo "AVISO: window '$short' não encontrada na sessão tmux '$MMB_TMUX_SESSION'."
     echo "Fallback: criando nova window."
     tmux new-window -t "$MMB_TMUX_SESSION" -n "atomic-$TASK_ID" -c "$WORKTREE"
-    _send_atomic_init "$MMB_TMUX_SESSION:atomic-$TASK_ID"
+    FALLBACK_PANE=$(tmux list-panes -t "$MMB_TMUX_SESSION:atomic-$TASK_ID" \
+      -F '#{pane_id}' | head -1)
+    _send_atomic_init "$MMB_TMUX_SESSION:atomic-$TASK_ID" "${FALLBACK_PANE:-}"
     "$TOOLING_DIR/bin/agents.sh" register \
       "$AGENT_ID" "$PARENT_AGENT" "$MMB_TMUX_SESSION:atomic-$TASK_ID" "$TASK_ID"
     echo "✓ Atômico spawnado em nova window 'atomic-$TASK_ID' (id: $AGENT_ID)"
@@ -156,7 +172,7 @@ if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; th
   # Captura o pane recém-criado (último pane da window).
   NEW_PANE=$(tmux list-panes -t "$MMB_TMUX_SESSION:$WINDOW_ID" \
     -F '#{pane_id}:#{pane_index}' | tail -1 | cut -d: -f1)
-  _send_atomic_init "$MMB_TMUX_SESSION:$WINDOW_ID"
+  _send_atomic_init "$MMB_TMUX_SESSION:$WINDOW_ID" "${NEW_PANE:-}"
 
   "$TOOLING_DIR/bin/agents.sh" register \
     "$AGENT_ID" "$PARENT_AGENT" "${NEW_PANE:-$MMB_TMUX_SESSION:$WINDOW_ID}" "$TASK_ID"

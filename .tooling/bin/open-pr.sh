@@ -110,6 +110,26 @@ rm -f "$TMP_BODY"
 
 echo "✓ PR aberto: $PR_URL"
 
+# Extrai número do PR da URL (https://github.com/org/repo/pull/N)
+PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$' || true)
+
+# Notifica master via inbox — alimenta o logger (R3: pr-aberto → ciclo pr_aberto).
+# Usa --allow-offline porque open-pr.sh roda no pane do atômico e o commd
+# pode não estar visível neste contexto; a mensagem fica pendente e é
+# drenada quando o daemon subir.
+if [ -n "$PR_NUMBER" ] && [ -n "${MMB_GH_OWNER:-}" ]; then
+  THREAD="${EPIC_SLUG:-${MMB_AGENT_ID:-}}"
+  if [ -n "$THREAD" ]; then
+    printf "PR aberto: %s\n" "$PR_URL" \
+      | MMB_TAB="${MMB_TAB:-atomic}" MMB_ALLOW_OFFLINE_ENQUEUE=1 \
+        "$TOOLING_DIR/bin/msg.sh" \
+          master status "pr-aberto-${PR_NUMBER}" - "$THREAD" \
+          2>/dev/null \
+      && echo "✓ Status pr-aberto-${PR_NUMBER} enviado ao master" \
+      || echo "  (msg.sh falhou; logger não vai registrar pr_aberto)"
+  fi
+fi
+
 # Comenta na sub-issue se conhecida
 if [ -n "$SUBISSUE" ]; then
   gh issue comment "$SUBISSUE" \
@@ -128,11 +148,11 @@ if [ -n "${MMB_AGENT_ID:-}" ]; then
   "$TOOLING_DIR/bin/agents.sh" deregister "$MMB_AGENT_ID" "pr-opened" || true
 fi
 
-# Auto-fechamento do pane: se estamos num pane tmux, mata em 8s
-# pra dar tempo de Rick ver a URL do PR. Roda em background pra
-# não bloquear o retorno do script.
+# Auto-fechamento do pane: usa MMB_PANE_ID (injetado pelo spawn-atomic.sh)
+# em vez de `tmux display-message`, que retorna o pane FOCADO pelo client
+# e pode matar a sessão do master se o usuário estiver com ela em foco.
 if [ -n "${TMUX:-}" ]; then
-  PANE_ID=$(tmux display-message -p '#{pane_id}' 2>/dev/null || true)
+  PANE_ID="${MMB_PANE_ID:-}"
   if [ -n "$PANE_ID" ]; then
     echo "Pane $PANE_ID vai fechar em 8s (Ctrl-C pra cancelar)."
     ( sleep 8 && tmux kill-pane -t "$PANE_ID" ) &

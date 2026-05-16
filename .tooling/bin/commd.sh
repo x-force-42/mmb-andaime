@@ -168,6 +168,16 @@ dispatch() {
       journal commd-claim "$dest" "$basename"
     fi
 
+    # Master é sessão interativa — não tem worker stateless.
+    # Entrega direta: move pra .done/ sem spawnar worker.sh.
+    # O master lê o inbox na mão (ou via cockpit futuramente).
+    if [ "$dest" = "master" ]; then
+      mv "$working_file" "$INBOX_BASE/$dest/.done/$basename" 2>/dev/null || true
+      journal commd-done "$dest" "$basename"
+      log "master-deliver (no worker): $basename"
+      exit 0
+    fi
+
     rc=0
     "$TOOLING_DIR/bin/worker.sh" "$dest" "$working_file" || rc=$?
 
