@@ -424,12 +424,17 @@ run_foreground() {
   )
 }
 
-case "${1:-fg}" in
-  fg|run|start) run_foreground ;;
-  status)       cmd_status ;;
-  stop)         cmd_stop ;;
-  *)
-    echo "Uso: $0 [fg|status|stop]" >&2
-    exit 1
-    ;;
-esac
+# Guard: dispatch só roda quando commd.sh é invocado direto, não quando
+# sourceado (ex.: pelos testes em .tooling/tests/test-commd-journal.sh).
+# Sem isso, sourcing dispararia run_foreground e o teste nunca retornaria.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  case "${1:-fg}" in
+    fg|run|start) run_foreground ;;
+    status)       cmd_status ;;
+    stop)         cmd_stop ;;
+    *)
+      echo "Uso: $0 [fg|status|stop]" >&2
+      exit 1
+      ;;
+  esac
+fi
