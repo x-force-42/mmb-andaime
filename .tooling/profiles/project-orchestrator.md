@@ -116,11 +116,21 @@ Mensagens já lidas ficam no inbox como histórico. Não delete.
 
 ## Como enviar mensagens
 
+**Status segue contrato semântico** (v0.4+): payload obrigatório por
+marco, especificado em [`protocol.md`](../protocol.md) seção
+"Contrato semântico dos `status`". Sem isso, worker-master cai em
+heurística e escala pending-human por falso positivo.
+
 ```bash
 # Status: marco importante pro mestre saber
+# (campos obrigatórios variam por marco — ver contrato no protocol.md)
 msg.sh master status issue-criada-3 - <thread> <<EOF
-Criei issue #3 (cleanup-scripts) e spawnei atômico 1.1.
-Worktree em mmb-core/.worktrees/1.1-cleanup-scripts.
+issue_url: https://github.com/x-force-42/mmb-core/issues/3
+issue_number: 3
+repo: mmb-core
+thread: cleanup-scripts
+
+Atômico 1.1 spawnado em worktree mmb-core/.worktrees/1.1-cleanup-scripts.
 EOF
 
 # Pergunta: briefing ambíguo, decisão fora do meu escopo
@@ -227,11 +237,17 @@ você na sua tab, inicia atômico com prompt apontando pra issue.
 
 ### 4. Status pro Mestre
 
-Logo após spawn, mande `status` pro Mestre:
+Logo após spawn, mande `status` pro Mestre — siga o contrato
+semântico em [`protocol.md`](../protocol.md):
 
 ```bash
 msg.sh master status issue-criada-<N> - <thread> <<EOF
-Issue #<N> criada. Atômico spawnado em pane novo da tab <seu-short>.
+issue_url: https://github.com/x-force-42/<repo>/issues/<N>
+issue_number: <N>
+repo: <repo>
+thread: <thread>
+
+Atômico spawnado em pane novo da tab <seu-short>.
 EOF
 ```
 
@@ -248,8 +264,17 @@ Quando perceber que PR foi mergeado (na próxima vez que olhar
 ```bash
 /MMB/.tooling/bin/task-end.sh <seu-repo> <task-id>
 
+# Após task-end, levantar dados do merge:
+#   gh pr view <pr-N> --json mergedAt,url -q '.mergedAt + " " + .url'
+
 msg.sh master status task-fechada-<id> - <thread> <<EOF
-Task <id> fechada. PR mergeado, worktree limpa.
+pr_url: https://github.com/x-force-42/<repo>/pull/<pr-N>
+pr_number: <pr-N>
+issue_number: <issue-N>
+merged_at: <ISO8601 do merge>
+last_in_epic: <true|false>
+
+Worktree limpa. Task <id> encerrada.
 EOF
 ```
 
@@ -308,10 +333,10 @@ muda o sentido do briefing.
 
 ### "Orq esqueceu de mandar status"
 Sintoma: Mestre não tem ideia do que aconteceu.
-Cura: status nos 3 marcos é obrigatório:
+Cura: status nos 3 marcos é obrigatório (com payload do contrato
+semântico em [`../protocol.md`](../protocol.md)):
 1. Após criar issue + spawn (`status: issue-criada-N`)
-2. Após PR aberto (opcional, atômico pode comentar; mas pode
-   reforçar com `status: pr-aberto-N`)
+2. Após PR aberto (`status: pr-aberto-N`)
 3. Após task fechada/abortada (`status: task-fechada` ou `error: task-abortada`)
 
 ### "Orq tocou código de produção"

@@ -109,16 +109,28 @@ isso é mitigado.
 🛡️ `spawn-atomic.sh` v3 **exige** issue# como 3º arg (não
    faz mais autodescoberta silenciosa).
 
-### L5 — Não mandar status pro Mestre
+### L5 — Não mandar status pro Mestre / mandar sem schema
 
-❌ Criar issue, spawnar atômico, esperar PR — sem nenhuma
+❌ (a) Criar issue, spawnar atômico, esperar PR — sem nenhuma
    mensagem pro mestre. Mestre fica cego.
-✅ **3 status obrigatórios:**
-   - `status: issue-criada-<N>` (após criar+spawn)
-   - `status: pr-aberto-<N>` (após PR aberto pelo atômico)
+❌ (b) Mandar status com body em prosa livre sem os campos
+   obrigatórios. Worker-master cai em heurística e escala
+   pending-human por falso positivo (caso real: épico dark-mode
+   2026-05-16 — 2 status `issue-criada-N` sem `issue_url` foram
+   escalados).
+✅ **3 status obrigatórios**, cada um com payload do contrato
+   semântico em [`protocol.md`](protocol.md) seção "Contrato
+   semântico dos `status`":
+   - `status: issue-criada-<N>` (após criar+spawn) — campos:
+     `issue_url`, `issue_number`, `repo`, `thread`.
+   - `status: pr-aberto-<N>` (após PR aberto pelo atômico) —
+     campos: `pr_url`, `pr_number`, `issue_number`, `suite_status`.
    - `status: task-fechada-<id>` ou `error: task-abortada-<id>`
-     (após task-end/task-abort)
-🛡️ Profile project-orchestrator.md lista marcos obrigatórios.
+     (após task-end/task-abort) — campos: `pr_url`, `pr_number`,
+     `issue_number`, `merged_at`, `last_in_epic`.
+🛡️ Profile project-orchestrator.md lista os marcos; `protocol.md`
+   define o schema canônico. Worker-master faz matching exato
+   sobre os campos — sem schema, não há matching seguro.
 
 ### L6 — Escalar pergunta trivial pro Mestre
 

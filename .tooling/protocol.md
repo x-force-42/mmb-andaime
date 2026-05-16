@@ -105,6 +105,88 @@ created: <ISO8601 UTC>
 | `reject-proposal` | parent | filho | "rejeito; mantém escopo original" (v0.1+) |
 | `cancel` | parent | filho | "abandone a task atual" (v0.1+) |
 
+### Contrato semântico dos `status` (v0.4+)
+
+Mensagens `type: status` carregam marcos do ciclo de vida de uma task.
+O `subject` segue convenção `<marco>-<N>`, onde `N` é o número da
+issue/PR no GitHub. O **body** tem payload obrigatório por marco —
+permite ao worker-master fazer matching exato sem heurística, sem
+escalar pending-human por falso positivo.
+
+Payload é markdown livre, mas precisa **conter literalmente** os
+campos listados abaixo (uma linha por campo no padrão
+`<chave>: <valor>`). Campos opcionais podem vir em prosa adicional.
+
+#### `status: issue-criada-<N>`
+
+Emitido pelo orq local após `gh issue create` materializar a
+sub-issue do épico.
+
+| Campo | Forma | Obrigatório |
+|---|---|---|
+| `issue_url` | URL absoluta `https://github.com/<owner>/<repo>/issues/<N>` | sim |
+| `issue_number` | N (mesmo do subject) | sim |
+| `repo` | `mmb-core` \| `mmb-cockpit` \| `mmb-aquarium` \| `mmb-logger` | sim |
+| `thread` | slug do épico (mesmo do frontmatter) | sim |
+
+Exemplo de body:
+```
+issue_url: https://github.com/x-force-42/mmb-cockpit/issues/15
+issue_number: 15
+repo: mmb-cockpit
+thread: dark-mode
+
+Atômico 1.1 spawnado em worktree mmb-cockpit/.worktrees/1.1-dark-mode.
+```
+
+#### `status: pr-aberto-<N>`
+
+Emitido pelo orq local após detectar que o atômico abriu PR (ou
+emitido pelo próprio atômico via `open-pr.sh`, dependendo da fase).
+`<N>` é o número do **PR**.
+
+| Campo | Forma | Obrigatório |
+|---|---|---|
+| `pr_url` | URL absoluta `https://github.com/<owner>/<repo>/pull/<N>` | sim |
+| `pr_number` | N (mesmo do subject) | sim |
+| `issue_number` | N da sub-issue que o PR fecha | sim |
+| `suite_status` | `verde` \| `vermelha` \| `pulada` (justificar `pulada` no PR body) | sim |
+
+Notas:
+- Evidência literal da suíte mora no **PR body** (guardrail A11) —
+  status só carrega o veredicto resumido. Worker-master usa
+  `suite_status` pra decidir se escala (`vermelha`/`pulada` →
+  pending-human; `verde` → digest).
+
+#### `status: task-fechada-<id>` / `status: pr-mergeado-<N>`
+
+Emitido pelo orq local após observar merge do PR + cleanup do
+worktree (`task-end.sh`).
+
+| Campo | Forma | Obrigatório |
+|---|---|---|
+| `pr_url` | URL absoluta do PR mergeado | sim |
+| `pr_number` | N do PR | sim |
+| `issue_number` | N da sub-issue (fechada por `Closes #N`) | sim |
+| `merged_at` | ISO8601 UTC do merge (de `gh pr view`) | sim |
+| `last_in_epic` | `true` \| `false` — última task do épico? | sim |
+
+`last_in_epic: true` sinaliza ao worker-master que pode propor
+fechamento do épico no próximo digest pro Mestre.
+
+#### Status sem schema
+
+`status: <marco>-...` cujo prefixo não esteja na tabela acima é
+tratado como livre. Worker-master pode logar `warn` mas não escala.
+Adicionar novo marco aqui antes de emitir do orq.
+
+#### Por que schema mínimo, não JSON
+
+Mensagens são markdown lidas por humanos durante debug. JSON puro
+quebra o "abro o arquivo e entendo" — chave-valor em linhas separadas
+preserva legibilidade e é trivial de parsear via grep/awk no
+worker-master.
+
 ### Mapeamento informal → FIPA-ACL (v0.1+)
 
 Pra observabilidade futura e alinhamento com literatura
