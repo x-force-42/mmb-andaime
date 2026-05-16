@@ -218,6 +218,36 @@ reconcile_once() {
   done
 }
 
+# Watchdog (B1.2): mata workers cujo heartbeat ficou stale.
+#
+# worker.sh atualiza mtime de state/heartbeat-<dest>.txt enquanto claude
+# produz output. Se mtime > MMB_WATCHDOG_STALE_SECONDS (default 90s),
+# claude pendurou em loop interno ou tool call sem progresso. Matar libera
+# o flock do dest pra próximas mensagens, sem precisar esperar o timeout
+# duro do claude -p (600s) expirar.
+#
+# kill é via pkill -f no worker.sh — SIGTERM propaga pra `timeout` e
+# `claude -p`. Worker.sh sai com rc!=0; o bloco de dispatch move pra
+# .dead/ e journaliza.
+: "${MMB_WATCHDOG_STALE_SECONDS:=90}"
+watchdog_check() {
+  local now=$(date +%s)
+  local d hb hb_mod hb_age
+  for d in master core cockpit aquarium logger; do
+    hb="$STATE_DIR/heartbeat-${d}.txt"
+    [ -f "$hb" ] || continue
+    hb_mod=$(stat -c %Y "$hb" 2>/dev/null || echo "$now")
+    hb_age=$((now - hb_mod))
+    if [ "$hb_age" -gt "$MMB_WATCHDOG_STALE_SECONDS" ]; then
+      log "watchdog: dest=$d heartbeat stale (${hb_age}s > ${MMB_WATCHDOG_STALE_SECONDS}s) — killing worker"
+      pkill -TERM -f "worker\.sh ${d} " 2>/dev/null || true
+      journal commd-watchdog-kill "$d" "(watchdog)" "stale_seconds=$hb_age"
+      # Trap de cleanup do worker remove o arquivo; defensivo se trap falhar:
+      rm -f "$hb"
+    fi
+  done
+}
+
 run_foreground() {
   # Pré-checks
   if ! command -v inotifywait >/dev/null 2>&1; then
@@ -316,6 +346,7 @@ run_foreground() {
     elif [ "$rc" -gt 128 ]; then
       # Timeout do read -t → safety net.
       reconcile_once
+      watchdog_check
     else
       # EOF: pipe do inotifywait fechou (processo morreu / SIGPIPE).
       log "inotifywait pipe fechou (rc=$rc); reconciliação final e saída"

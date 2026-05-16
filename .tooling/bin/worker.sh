@@ -84,6 +84,42 @@ LOG_DIR="$TOOLING_DIR/logs/workers"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/${DEST}.log"
 
+# ─── Heartbeat (B1.2 — andaime-fortification-v08) ────────────────
+# Sub-processo de fundo atualiza mtime de state/heartbeat-<dest>.txt
+# enquanto claude estiver produzindo output (log com mtime recente).
+# Se claude pendurar (sem output novo por > 60s), heartbeat congela —
+# commd watchdog detecta staleness > 90s e mata o worker, liberando
+# o flock do dest. Sem isso, um worker travado segura todas as
+# próximas mensagens daquele dest até o timeout duro (600s) expirar.
+HEARTBEAT_FILE="$TOOLING_DIR/state/heartbeat-${DEST}.txt"
+mkdir -p "$TOOLING_DIR/state"
+: > "$HEARTBEAT_FILE"
+
+heartbeat_tick() {
+  while sleep 15; do
+    # Parent worker.sh já saiu? Encerre.
+    kill -0 $$ 2>/dev/null || exit 0
+    # Log produzindo output nos últimos 60s? Refresh heartbeat.
+    if [ -f "$LOG" ]; then
+      local now log_mod
+      now=$(date +%s)
+      log_mod=$(stat -c %Y "$LOG" 2>/dev/null || echo 0)
+      if [ "$((now - log_mod))" -lt 60 ]; then
+        touch "$HEARTBEAT_FILE"
+      fi
+    fi
+  done
+}
+
+heartbeat_tick &
+HEARTBEAT_PID=$!
+
+cleanup_heartbeat() {
+  kill "$HEARTBEAT_PID" 2>/dev/null || true
+  rm -f "$HEARTBEAT_FILE"
+}
+trap cleanup_heartbeat EXIT
+
 # Flags do claude conforme camada
 CLAUDE_FLAGS=$(mmb_claude_flags "$LAYER")
 
