@@ -31,10 +31,18 @@ neste projeto pra ativar os hooks.
 ### `block-pr-merge.sh` — enforcement de A10/A8
 
 Hook **PreToolUse** com matcher `Bash`. Bloqueia `gh pr merge` e
-`gh pr review --approve` em sessões atômicas (detectadas pela presença
-de `MMB_AGENT_ID` no env). Sessões do Mestre, do Rick (terminal manual),
-do worker-master e do orq local não têm `MMB_AGENT_ID` setado — o hook
-é no-op transparente nelas.
+`gh pr review --approve` em **sessões automatizadas** do andaime
+(atômico, worker stateless, orq), detectadas pela convenção de
+`MMB_AGENT_ID`:
+
+| `MMB_AGENT_ID` | Tipo de sessão | Decisão |
+|---|---|---|
+| unset | Rick em terminal manual (fora do tmux do andaime) | ALLOW |
+| `master` | Mestre **interativo** (`up.sh` exporta) | ALLOW |
+| `master-<pid>` | worker-master stateless (`worker.sh` exporta) | BLOCK |
+| `<repo>-<pid>` | worker orq stateless (`worker.sh` exporta) | BLOCK |
+| `<repo>-<task-id>` | atômico (`spawn-atomic.sh` exporta) | BLOCK |
+| qualquer outro valor | sessão automatizada não-canônica | BLOCK |
 
 **O que é bloqueado em sessão atômica:**
 

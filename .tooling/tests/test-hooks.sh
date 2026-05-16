@@ -56,7 +56,11 @@ assert_exit() {
 # ── 1. Bloqueia em sessão atômica ────────────────────────────────
 
 section_blocks() {
-  echo "── block-pr-merge: bloqueia em sessão atômica ──"
+  echo "── block-pr-merge: bloqueia em sessões automatizadas (atômico, worker, orq) ──"
+
+  # Worker stateless (master-<pid> ou <dest>-<pid>) também bloqueado
+  assert_exit "MMB_AGENT_ID=master-31234 (worker-master)"   2 "$(run_hook "master-31234" "Bash" "gh pr merge 14")"
+  assert_exit "MMB_AGENT_ID=logger-30873 (worker orq)"      2 "$(run_hook "logger-30873" "Bash" "gh pr merge 14")"
 
   assert_exit "gh pr merge"                                 2 "$(run_hook "cockpit-M4" "Bash" "gh pr merge 14")"
   assert_exit "gh pr merge --auto"                          2 "$(run_hook "logger-L2" "Bash" "gh pr merge --auto")"
@@ -75,10 +79,12 @@ section_blocks() {
 # ── 2. Permite quando NÃO é sessão atômica ───────────────────────
 
 section_allows_non_atomic() {
-  echo "── block-pr-merge: permite quando MMB_AGENT_ID não setado ──"
+  echo "── block-pr-merge: permite Mestre interativo / Rick manual ──"
 
-  assert_exit "gh pr merge sem agent_id (Mestre/Rick)"     0 "$(run_hook "" "Bash" "gh pr merge 14")"
+  assert_exit "gh pr merge sem agent_id (Rick manual)"     0 "$(run_hook "" "Bash" "gh pr merge 14")"
   assert_exit "gh pr review --approve sem agent_id"        0 "$(run_hook "" "Bash" "gh pr review --approve 14")"
+  assert_exit "gh pr merge com MMB_AGENT_ID=master"        0 "$(run_hook "master" "Bash" "gh pr merge 14")"
+  assert_exit "gh pr review --approve com MMB_AGENT_ID=master" 0 "$(run_hook "master" "Bash" "gh pr review --approve 14")"
 }
 
 # ── 3. Permite comandos não-destrutivos (mesmo em atômico) ───────

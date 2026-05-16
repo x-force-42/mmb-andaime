@@ -2,12 +2,21 @@
 # Hook PreToolUse do Claude Code — bloqueia comandos destrutivos de PR
 # em sessões atômicas (enforcement técnico dos guardrails A10 + A8).
 #
-# Bloqueia se MMB_AGENT_ID estiver setado E o comando contiver:
+# Bloqueia se for sessão "automatizada" (worker stateless, atômico, orq
+# spawnado) E o comando contiver:
 #   - `gh pr merge`               (qualquer flag: --squash, --auto, sem flags)
 #   - `gh pr review ... --approve` (em qualquer ordem de args)
 #
-# Em sessões sem MMB_AGENT_ID (Mestre, Rick manual, worker-master)
-# o hook é no-op transparente.
+# Convenção do MMB_AGENT_ID (setado por up.sh / worker.sh / spawn-atomic.sh):
+#   unset     → Rick em terminal manual fora do tmux do andaime    → ALLOW
+#   "master"  → Mestre INTERATIVO (setado por up.sh:79)             → ALLOW
+#   "<dest>-<pid>"      → worker stateless (master-/logger-/...)    → BLOCK
+#   "<repo>-<task-id>"  → atômico spawnado por spawn-atomic.sh      → BLOCK
+#   qualquer outro valor                                            → BLOCK
+#
+# Mestre interativo é o ÚNICO contexto automatizado autorizado a
+# mergear/aprovar. Worker-master também é "automatizado" mesmo rodando
+# em nome do master — ele não revisa, só triá.
 #
 # Protocolo de hooks PreToolUse do Claude Code:
 #   - stdin: JSON com {tool_name, tool_input, ...}
@@ -57,25 +66,30 @@ elif printf '%s' "$command" | grep -qE "$PATTERN_REVIEW" \
 fi
 
 if [ -n "$blocked" ]; then
-  # Só bloqueia em sessão atômica (MMB_AGENT_ID setado pelo spawn-atomic.sh).
-  if [ -n "${MMB_AGENT_ID:-}" ]; then
+  # Bloqueia se MMB_AGENT_ID está setado E não é o Mestre interativo
+  # (cuja convenção é MMB_AGENT_ID="master", setado por up.sh).
+  agent_id="${MMB_AGENT_ID:-}"
+  if [ -n "$agent_id" ] && [ "$agent_id" != "master" ]; then
     cat >&2 <<EOF
-BLOCKED: Guardrails A10/A8 — atômico não mergeia nem aprova PR.
+BLOCKED: Guardrails A10/A8 — só Mestre interativo mergeia/aprova PR.
 
 Padrão detectado:  $blocked
 Comando completo:  $command
-MMB_AGENT_ID:      $MMB_AGENT_ID
+MMB_AGENT_ID:      $agent_id
 
-Só Mestre/Rick mergeia ou aprova. Sua única ação correta após
-\`open-pr.sh\` é parar — o pane fecha em 8s sozinho.
+Esta sessão NÃO é o Mestre interativo (MMB_AGENT_ID != "master").
+Sessões automatizadas (worker stateless, atômico, orq) não mergeiam
+nem aprovam — só o Mestre interativo ou Rick (sem env do andaime).
 
-Se o seu trabalho parece "pronto pra mergear", o sinal correto é
-deixar o PR aberto pra revisão humana. Rick mergeia quando revisar.
+Se você é atômico: sua única ação correta após \`open-pr.sh\` é
+parar — o pane fecha em 8s sozinho.
+
+Se você é worker-master: triagem manda escalar pra pending-human/
+quando algo merece decisão; merge é decisão humana.
 
 Episódio que motivou esta barreira: logger PR #9 no épico
 ux-refresh-v07 (2026-05-16), mergeado autonomamente ~56 min após
-open-pr.sh, sem revisão humana. Já tinha A10 documentado no
-profile; agora tem enforcement técnico.
+open-pr.sh, sem revisão humana.
 EOF
     exit 2
   fi
