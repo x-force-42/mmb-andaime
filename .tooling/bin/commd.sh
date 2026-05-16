@@ -206,15 +206,10 @@ dispatch() {
       journal commd-claim "$dest" "$basename"
     fi
 
-    # Master é sessão interativa — não tem worker stateless.
-    # Entrega direta: move pra .done/ sem spawnar worker.sh.
-    # O master lê o inbox na mão (ou via cockpit futuramente).
-    if [ "$dest" = "master" ]; then
-      mv "$working_file" "$INBOX_BASE/$dest/.done/$basename" 2>/dev/null || true
-      journal commd-done "$dest" "$basename"
-      log "master-deliver (no worker): $basename"
-      exit 0
-    fi
+    # B2A v0.8+: master agora é dispatchado normalmente. worker.sh
+    # carrega profile master-worker.md (stateless de triagem) e
+    # processa a mensagem — rotina vai pro digest, escala vai pro
+    # pending-human/. Removida a entrega-direta-sem-worker antiga.
 
     rc=0
     "$TOOLING_DIR/bin/worker.sh" "$dest" "$working_file" || rc=$?
