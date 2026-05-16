@@ -58,7 +58,13 @@ log() {
 # nunca deve quebrar dispatch.
 #
 # Uso: journal <event> <dest> <basename> [key=val ...]
-#   key=val: extras numéricos (ex.: exit_code=124, timeout_seconds=1200).
+#   key=val: extras. Auto-detecta numérico vs string e quota
+#   apropriadamente pra produzir JSON válido. Strings com aspas são
+#   escapadas. Ex.:
+#     journal commd-worker-timeout core msg.md timeout_seconds=600
+#       → ..."timeout_seconds":600
+#     journal commd-worker-timeout core msg.md sev=error epic=ux-refresh-v07
+#       → ..."sev":"error","epic":"ux-refresh-v07"
 journal() {
   local event="$1" dest="$2" basename="$3"
   shift 3
@@ -67,17 +73,49 @@ journal() {
   # pid = commd ($$). Worker pid vive no header de logs/workers/<dest>.log.
   json=$(printf '{"ts":"%s","event":"%s","dest":"%s","file":"%s","pid":%d' \
     "$ts" "$event" "$dest" "$basename" "$$")
-  local kv key val
+  local kv key val val_esc
   for kv in "$@"; do
     key="${kv%%=*}"
     val="${kv#*=}"
-    json+=$(printf ',"%s":%s' "$key" "$val")
+    if [[ "$val" =~ ^-?[0-9]+$ ]] || [[ "$val" =~ ^-?[0-9]+\.[0-9]+$ ]]; then
+      json+=$(printf ',"%s":%s' "$key" "$val")
+    else
+      # String: escape aspas + backslashes pra JSON válido.
+      val_esc="${val//\\/\\\\}"
+      val_esc="${val_esc//\"/\\\"}"
+      json+=$(printf ',"%s":"%s"' "$key" "$val_esc")
+    fi
   done
   json+='}'
   (
     flock --timeout 5 9 || exit 0
     printf '%s\n' "$json" >> "$JOURNAL_LOG"
   ) 9>>"$JOURNAL_LOCK" || true
+}
+
+# Extrai 'thread:' do frontmatter da mensagem (usado como 'epic' nos
+# eventos sev:error). Frontmatter é YAML simples entre ---/---; thread
+# é uma chave opcional. Retorna string vazia se ausente.
+extract_thread() {
+  local file="$1"
+  [ -f "$file" ] || { echo ""; return; }
+  awk '
+    BEGIN { in_fm = 0 }
+    /^---[[:space:]]*$/ { in_fm = !in_fm; next }
+    in_fm && /^thread:/ {
+      sub(/^thread:[[:space:]]*/, "", $0)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0)
+      print $0
+      exit
+    }
+  ' "$file" 2>/dev/null
+}
+
+# Gera um id único pra correlacionar eventos sev:error com resolutions
+# futuras (review-cycle.sh casa por id). Timestamp + dest + suffix random.
+error_id() {
+  local dest="$1" kind="$2"
+  printf '%s-%s-%s-%d' "$(date -u +%Y%m%dT%H%M%SZ)" "$dest" "$kind" "$RANDOM"
 }
 
 cmd_status() {
@@ -186,15 +224,30 @@ dispatch() {
       journal commd-done "$dest" "$basename"
       journal commd-worker-done "$dest" "$basename"
     elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+      # Captura thread/epic ANTES de mover o arquivo pra .dead/ (caminho muda).
+      thread=$(extract_thread "$working_file")
+      err_id=$(error_id "$dest" "worker-timeout")
       mv "$working_file" "$INBOX_BASE/$dest/.dead/$basename" 2>/dev/null || true
       journal commd-dead "$dest" "$basename"
-      journal commd-worker-timeout "$dest" "$basename" "timeout_seconds=$MMB_WORKER_TIMEOUT"
+      journal commd-worker-timeout "$dest" "$basename" \
+        "sev=error" "kind=worker-timeout" "epic=$thread" "id=$err_id" \
+        "timeout_seconds=$MMB_WORKER_TIMEOUT"
       log "worker TIMEOUT (rc=$rc) dest=$dest file=$basename"
     else
+      # Distingue watchdog-kill (SIGTERM via pkill, rc=143) de outros exits.
+      thread=$(extract_thread "$working_file")
+      if [ "$rc" -eq 143 ]; then
+        err_kind="worker-watchdog-kill"
+      else
+        err_kind="worker-exit"
+      fi
+      err_id=$(error_id "$dest" "$err_kind")
       mv "$working_file" "$INBOX_BASE/$dest/.dead/$basename" 2>/dev/null || true
       journal commd-dead "$dest" "$basename"
-      journal commd-worker-exit "$dest" "$basename" "exit_code=$rc"
-      log "worker exit-code=$rc dest=$dest file=$basename"
+      journal commd-worker-exit "$dest" "$basename" \
+        "sev=error" "kind=$err_kind" "epic=$thread" "id=$err_id" \
+        "exit_code=$rc"
+      log "worker exit-code=$rc kind=$err_kind dest=$dest file=$basename"
     fi
   ) 9>>"$lock" &
 }
@@ -241,7 +294,13 @@ watchdog_check() {
     if [ "$hb_age" -gt "$MMB_WATCHDOG_STALE_SECONDS" ]; then
       log "watchdog: dest=$d heartbeat stale (${hb_age}s > ${MMB_WATCHDOG_STALE_SECONDS}s) — killing worker"
       pkill -TERM -f "worker\.sh ${d} " 2>/dev/null || true
-      journal commd-watchdog-kill "$d" "(watchdog)" "stale_seconds=$hb_age"
+      # Evento sev:error com id correlacionável. epic="" pois watchdog não
+      # conhece a thread aqui (mensagem em .processing/ pode ter ido); o
+      # commd-worker-exit subsequente carrega o epic real.
+      local wd_id
+      wd_id=$(error_id "$d" "watchdog-stale")
+      journal commd-watchdog-kill "$d" "(watchdog)" \
+        "sev=error" "kind=watchdog-stale" "id=$wd_id" "stale_seconds=$hb_age"
       # Trap de cleanup do worker remove o arquivo; defensivo se trap falhar:
       rm -f "$hb"
     fi
