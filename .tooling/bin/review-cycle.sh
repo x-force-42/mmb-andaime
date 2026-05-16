@@ -21,7 +21,8 @@ TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
 
-JOURNAL="$TOOLING_DIR/logs/journal.jsonl"
+# Path do journal (env override pra testes; default = produção).
+JOURNAL="${MMB_JOURNAL_PATH:-$TOOLING_DIR/logs/journal.jsonl}"
 
 EPIC="${1:-}"
 if [ -z "$EPIC" ]; then
@@ -52,9 +53,12 @@ if [ -z "$EPIC_LINES" ]; then
   exit 0
 fi
 
-# Identifica IDs resolvidos
+# Identifica IDs resolvidos.
+# grep sem match retorna 1 — sob `set -o pipefail` isso mata o script
+# silenciosamente. Neutraliza no meio do pipe (mesmo padrão de
+# _grep_count abaixo). Sed/sort lidam com input vazio sem reclamar.
 RESOLVED_IDS=$(printf '%s\n' "$EPIC_LINES" \
-  | grep -oE '"resolves":"[^"]+"' \
+  | { grep -oE '"resolves":"[^"]+"' || true; } \
   | sed -E 's/.*"resolves":"([^"]+)".*/\1/' \
   | sort -u)
 
@@ -131,7 +135,8 @@ echo
 
 # 1) Eventos repetidos cross-épico (potencial guardrail)
 echo "[1] Eventos repetidos NO HISTÓRICO INTEIRO do journal:"
-REPEATED=$(grep -oE '"event":"[^"]+"' "$JOURNAL" \
+# grep neutralizado: journal pode (raríssimo) não ter `"event":`
+REPEATED=$({ grep -oE '"event":"[^"]+"' "$JOURNAL" || true; } \
   | sed -E 's/.*"event":"([^"]+)".*/\1/' \
   | sort | uniq -c | sort -rn \
   | awk '$1 >= 2 { printf "    %d×  %s\n", $1, $2 }')
@@ -146,7 +151,7 @@ echo
 # 2) Eventos só deste épico
 echo "[2] Eventos únicos deste épico (potencial bug local):"
 LOCAL_EVENTS=$(printf '%s\n' "$UNRESOLVED" \
-  | grep -oE '"event":"[^"]+"' \
+  | { grep -oE '"event":"[^"]+"' || true; } \
   | sed -E 's/.*"event":"([^"]+)".*/\1/' \
   | sort -u)
 if [ -n "$LOCAL_EVENTS" ]; then
