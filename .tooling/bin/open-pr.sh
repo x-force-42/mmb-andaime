@@ -20,10 +20,40 @@ set -euo pipefail
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/bin/lib/pr-body.sh"
 
 DRAFT_FLAG=""
 if [ "${1:-}" = "--draft" ]; then
   DRAFT_FLAG="--draft"
+fi
+
+# ── Pré-flight de GH_SUBISSUE (antes do push) ─────────────────────
+# Validar AGORA, não depois do push: PR sem Closes #N quebra o casamento
+# PR↔issue no reconcile do mmb-logger, fazendo ciclos completos aparecerem
+# como abortados. Falha antes do push deixa a árvore git intocada;
+# falha depois deixa branch publicada sem PR.
+#
+# Caminho feliz: spawn-atomic.sh exporta GH_SUBISSUE quando spawna o atômico.
+# Manual: rode com `GH_SUBISSUE=42 .tooling/bin/open-pr.sh`.
+
+SUBISSUE="${GH_SUBISSUE:-}"
+if ! mmb_validate_subissue_format "$SUBISSUE"; then
+  cat >&2 <<EOF
+ERRO: GH_SUBISSUE ausente ou inválido: '${SUBISSUE}'
+
+  GH_SUBISSUE precisa ser o número da sub-issue (inteiro positivo).
+  Caminho feliz: spawn-atomic.sh exporta GH_SUBISSUE automaticamente
+  ao spawnar o atômico.
+
+  Se você está rodando open-pr.sh manualmente:
+    GH_SUBISSUE=<número-da-issue> $0 $*
+
+  Por que falhamos antes do push: PR sem 'Closes #N' impede que o
+  mmb-logger case PR↔issue, e ciclos concluídos aparecem como
+  abortados no cockpit. Fonte do gap em .tooling/source-of-truth.md.
+EOF
+  exit 2
 fi
 
 TOPLEVEL=$(git rev-parse --show-toplevel)
@@ -69,33 +99,10 @@ if [ -z "$PR_TITLE" ]; then
   PR_TITLE=$(git log -1 --pretty=format:'%s')
 fi
 
-# Body
+# Body — construído via lib pra testabilidade. SUBISSUE já validada.
 TMP_BODY=$(mktemp)
 COMMITS_LIST=$(git log "$DEFAULT_BRANCH..HEAD" --no-merges --pretty=format:'- %s')
-
-# Tenta descobrir sub-issue
-SUBISSUE="${GH_SUBISSUE:-}"
-if [ -z "$SUBISSUE" ]; then
-  SUBISSUE=$(git log "$DEFAULT_BRANCH..HEAD" --no-merges --pretty=format:'%B' \
-    | grep -oE '#[0-9]+' | head -1 | tr -d '#' || true)
-fi
-
-{
-  echo "## O que mudou"
-  echo
-  echo "$COMMITS_LIST"
-  echo
-  echo "## Origem"
-  echo
-  if [ -n "$SUBISSUE" ]; then
-    echo "Closes #$SUBISSUE"
-  else
-    echo "_Sub-issue não detectada automaticamente. Adicione \`Closes #N\` se aplicável._"
-  fi
-  echo
-  echo "---"
-  echo "🤖 PR aberto via \`.tooling/bin/open-pr.sh\` pelo Agente Atômico (worktree: \`$WORKTREE_NAME\`)."
-} > "$TMP_BODY"
+mmb_build_pr_body "$SUBISSUE" "$COMMITS_LIST" "$WORKTREE_NAME" > "$TMP_BODY"
 
 echo "→ gh pr create (base: $DEFAULT_BRANCH)..."
 PR_URL=$(gh pr create \

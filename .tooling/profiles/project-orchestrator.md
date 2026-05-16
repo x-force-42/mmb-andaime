@@ -177,24 +177,43 @@ e aguarde answer. Não invente.
 
 ### 2. Criação da sub-issue no GitHub
 
-Você é quem materializa o briefing como sub-issue:
+Você é quem materializa o briefing como sub-issue. **Use sempre o
+wrapper `create-task-issue.sh`** — nunca chame `gh issue create`
+direto pra criar sub-issue do método. O wrapper prepende a âncora
+`mmb-cycle-key` ao body, sem a qual o `mmb-logger` regride pra
+inferência heurística pra casar issue ↔ briefing.
 
 ```bash
-source /MMB/.tooling/config.sh
+# inbox-file é o arquivo de briefing que você acabou de receber.
+# Wrapper extrai frontmatter (thread, to, created, subject), valida,
+# monta âncora, aplica labels obrigatórias, chama gh.
+#
+# Stdout = número da issue (só isso). Stderr = URL + diagnósticos.
 
-# Body da issue = briefing inteiro (ou refinado por você)
-gh issue create \
-  --repo "$MMB_GH_OWNER/<seu-repo>" \
-  --title "<conventional-commit title>" \
-  --label "task,project:<seu-repo>,epic:<thread>" \
-  --body-file <briefing-path>
+ISSUE=$(/MMB/.tooling/bin/create-task-issue.sh <seu-repo> <inbox-file>)
+echo "Issue criada: #$ISSUE"
 ```
 
-A issue **é o prompt do atômico** — então o body precisa ser
-executável (template `.tooling/templates/task-briefing.md`
-já tá nesse formato).
+Por que o wrapper:
+- Garante âncora `mmb-cycle-key: <epic>/<project>/<created>` no body,
+  contrato definido em [`source-of-truth.md`](../source-of-truth.md).
+- Aplica labels obrigatórias (`task`, `project:<repo>`, `epic:<thread>`)
+  derivadas do frontmatter — sem chance de digitar errado.
+- Valida que `briefing.to` casa com o repo — pega briefing endereçado
+  ao projeto errado.
+- Falha ruidoso (exit 2 ou 3) se algo está fora do contrato. Não
+  silencioso.
 
-Anote o número que voltou. Você vai passar pro spawn.
+Override opcional: `--title "<conventional-commit title>"` se você
+quiser título diferente do `subject` do frontmatter (raramente
+necessário — subject já é kebab-case).
+
+Anote o `$ISSUE` retornado. Você vai passar pro spawn.
+
+**Não criar issue manualmente** (`gh issue create` direto) pra
+sub-issues do método. Issues manuais são caminho legítimo só pra
+fora do método (Rick documentando algo, hotfix isolado, etc) e
+viram warning `missing-anchor` no reconcile.
 
 ### 3. Spawn do atômico
 
@@ -313,6 +332,7 @@ Top 6 violações que matam o método. Spec completo em
 |---|---|---|
 | **L1** | Não converse com Rick. Diretamente, NUNCA. | Você ia pedir input pro Rick |
 | **L4** | Não spawne atômico sem criar issue antes | Você ia rodar `spawn-atomic` sem issue # |
+| **L15** | Use `create-task-issue.sh`, nunca `gh issue create` direto pra sub-issue do método | Você ia digitar `gh issue create` em vez do wrapper |
 | **L5** | Mande 3 status obrigatórios (issue-criada, pr-aberto, task-fechada) | Você esqueceu de mandar status após marco |
 | **L6** | Não escale pergunta trivial — decida sozinho | Você ia mandar `question` sobre coisa óbvia |
 | **L7** | Acuse TODA mensagem `MSG` que aparecer | Você ia ignorar um ping |

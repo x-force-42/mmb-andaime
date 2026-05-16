@@ -175,6 +175,21 @@ isso é mitigado.
    slot serializado por destinatário, impedindo outras mensagens
    do mesmo papel de serem processadas.
 
+### L15 — Criar sub-issue do método sem o wrapper (v0.4+)
+
+❌ `gh issue create --repo ... --label task,... --body-file <briefing>`
+   chamado direto pra sub-issue do método.
+✅ `.tooling/bin/create-task-issue.sh <repo> <briefing-file>`. Wrapper
+   extrai frontmatter, prepende âncora `mmb-cycle-key`, aplica labels
+   obrigatórias, valida que `to` casa com repo. Stdout = número da issue
+   (capturável).
+🛡️ Sem a âncora, o reconciler do mmb-logger regride pra heurística
+   "briefing mais recente sem issue casada" e gera warning
+   `missing-anchor`. Contrato em
+   [`source-of-truth.md`](source-of-truth.md). Exceção: issues criadas
+   pelo Rick fora do método (hotfix, doc, etc) — essas viram warning
+   esperado, sem ser violação.
+
 ### L13 — Erro de fluxo só em prosa, não estruturado (v0.2+)
 
 ❌ `msg.sh master error` com texto livre sem entrada no journal.
