@@ -214,7 +214,7 @@ após merge. Seu pane se fecha sozinho.
 
 ## Guardrails específicos (leia cedo, releia sempre)
 
-Top 7 violações que matam atômicos. Spec completo em
+Top 8 violações que matam atômicos. Spec completo em
 [`../guardrails.md`](../guardrails.md).
 
 | Guardrail | Resumo | Sinal de violação |
@@ -226,6 +226,7 @@ Top 7 violações que matam atômicos. Spec completo em
 | **A8** | Após `open-pr.sh`, sessão termina | Você ia continuar polindo |
 | **A9** | Você não tem `msg.sh`. Reporte vai em PR body | Você ia tentar mandar mensagem |
 | **A10** | NUNCA mergeia PR. **Só Mestre/Rick mergeia.** | Você ia rodar `gh pr merge` após `open-pr.sh` |
+| **A11** | NUNCA abre PR sem `MMB_SUITE_OUTPUT` | Você ia `open-pr.sh` sem rodar suíte primeiro |
 
 Se você se pegar prestes a violar: **pare**, encerre sem entregar
 (o orq local vai notar a worktree não-mergeada e abortar).
@@ -247,3 +248,38 @@ fica aguardando revisor humano. Episódio histórico (ux-refresh-v07,
 logger PR #9): atômico decidiu mergear sozinho 56 min após abrir PR;
 quando o Mestre foi mergear, recebeu "already merged" — bagunçou o
 audit trail e violou o "Rick é única autoridade de merge".
+
+## A11 em detalhe (novo em v0.8)
+
+### Você abre PR com suíte verde no body, sempre
+
+Antes de `open-pr.sh`, rode a suíte de testes do repo, capture o
+output, exporte a variável, e só então chame open-pr.sh:
+
+```bash
+# Cockpit ou Aquarium (Vitest):
+npm test 2>&1 | tee /tmp/suite-output.txt
+[ "${PIPESTATUS[0]}" -eq 0 ] || { echo "Suíte vermelha, NÃO abrir PR"; exit 1; }
+MMB_SUITE_OUTPUT=/tmp/suite-output.txt /MMB/.tooling/bin/open-pr.sh
+
+# Logger (Pytest):
+.venv/bin/pytest 2>&1 | tee /tmp/suite-output.txt
+[ "${PIPESTATUS[0]}" -eq 0 ] || { echo "Suíte vermelha, NÃO abrir PR"; exit 1; }
+MMB_SUITE_OUTPUT=/tmp/suite-output.txt /MMB/.tooling/bin/open-pr.sh
+```
+
+`open-pr.sh` valida (exit 3 se falhar):
+- `MMB_SUITE_OUTPUT` existe e não-vazia
+- Arquivo apontado existe
+- Arquivo não-vazio
+- Arquivo >= 100 bytes (anti-gaming `echo > /tmp/x`)
+
+Se a suíte do repo é flaky num teste irrelevante: conserte, ou marque
+`xfail`/`skip` explicitamente com comentário no código. NÃO comente
+"tem 1 teste flakey, ignora" e mande PR — A11 falha ruidoso e bloqueia.
+
+Output da suíte vai no PR body como bloco code-fenced, truncado em
+4KB com nota se exceder. Revisor humano vê de imediato que rodou.
+
+E2E pesado (Playwright em aquarium): se brief pediu, rode. Se não
+pediu, vitest unitário é suficiente (não inflar suíte por inflar).

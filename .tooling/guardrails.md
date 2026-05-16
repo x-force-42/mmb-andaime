@@ -289,6 +289,28 @@ isso é mitigado.
    decidido mergear autonomamente após `open-pr.sh`. Esta
    guardrail é a barreira explícita.
 
+### A11 — Abrir PR sem suíte verde no body (v0.8+)
+
+❌ Rodar `open-pr.sh` sem `MMB_SUITE_OUTPUT` apontando pra arquivo
+   com output literal da suíte de testes verde.
+✅ Antes de `open-pr.sh`, rode a suíte completa do repo (Pytest,
+   Vitest, npm test, etc), redirecione output pra arquivo, e
+   exporte:
+   ```bash
+   npm test 2>&1 | tee /tmp/suite.txt
+   [ "${PIPESTATUS[0]}" -eq 0 ] || { echo "vermelha"; exit 1; }
+   MMB_SUITE_OUTPUT=/tmp/suite.txt .tooling/bin/open-pr.sh
+   ```
+🛡️ `open-pr.sh` valida (a) variável existe e não-vazia,
+   (b) arquivo existe, (c) arquivo não-vazio, (d) >= 100 bytes
+   (anti-gaming via `MMB_SUITE_MIN_BYTES`). Falha ruidosa com
+   mensagem clara se ausente — exit 3. `mmb_build_pr_body` embute
+   conteúdo na seção `## Suíte verde` do PR body, truncado em 4KB
+   com nota se exceder. Revisores veem que testes rodaram sem
+   precisar pedir. Origem: ux-refresh-v07, 3 PRs (logger #9,
+   cockpit #14, aquarium #13) abertos sem qualquer evidência de
+   teste no body apesar do Rick ter sido enfático no briefing.
+
 ## Concorrência
 
 ### X1 — 2 atômicos no mesmo arquivo (mesmo repo)

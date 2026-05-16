@@ -56,6 +56,55 @@ EOF
   exit 2
 fi
 
+# ── Pré-flight de MMB_SUITE_OUTPUT (guardrail A11) ────────────────
+# Atômico precisa rodar a suíte de testes antes de abrir PR e passar
+# o output literal via env var. Sem isso, a revisão fica refém da
+# memória do atômico — bug do ux-refresh-v07 onde 3 PRs vieram sem
+# evidência de testes no body apesar do Rick ter pedido explicitamente.
+#
+# Caminho feliz (atômico):
+#   npm test 2>&1 | tee /tmp/suite.txt
+#   [ "${PIPESTATUS[0]}" -eq 0 ] || { echo vermelho; exit 1; }
+#   MMB_SUITE_OUTPUT=/tmp/suite.txt /MMB/.tooling/bin/open-pr.sh
+
+SUITE_OUTPUT="${MMB_SUITE_OUTPUT:-}"
+mmb_validate_suite_output "$SUITE_OUTPUT" && _suite_rc=0 || _suite_rc=$?
+if [ "$_suite_rc" -ne 0 ]; then
+  rc="$_suite_rc"
+  case "$rc" in
+    1) reason="MMB_SUITE_OUTPUT não setada (env var ausente ou vazia)" ;;
+    2) reason="MMB_SUITE_OUTPUT='${SUITE_OUTPUT}' aponta pra arquivo que não existe" ;;
+    3) reason="MMB_SUITE_OUTPUT='${SUITE_OUTPUT}' aponta pra arquivo vazio" ;;
+    4) reason="MMB_SUITE_OUTPUT='${SUITE_OUTPUT}' tem menos de ${MMB_SUITE_MIN_BYTES:-100} bytes (suspeita de gaming)" ;;
+    *) reason="MMB_SUITE_OUTPUT inválida (código $rc)" ;;
+  esac
+  cat >&2 <<EOF
+ERRO: $reason
+
+  Guardrail A11 — atômico abre PR com suíte verde no body.
+
+  Antes de open-pr.sh, rode a suíte de testes do repo, capture o
+  output, e exporte:
+
+    # Pytest (logger):
+    .venv/bin/pytest 2>&1 | tee /tmp/suite.txt
+    [ "\${PIPESTATUS[0]}" -eq 0 ] || { echo "Suíte vermelha"; exit 1; }
+    MMB_SUITE_OUTPUT=/tmp/suite.txt $0 $*
+
+    # Vitest (cockpit / aquarium):
+    npm test 2>&1 | tee /tmp/suite.txt
+    [ "\${PIPESTATUS[0]}" -eq 0 ] || { echo "Suíte vermelha"; exit 1; }
+    MMB_SUITE_OUTPUT=/tmp/suite.txt $0 $*
+
+  Se a suíte falha: conserte ou marque xfail/skip explicitamente.
+  Não tente abrir PR com suíte vermelha — revisão é bloqueada.
+
+  Override pra script-de-dev local (NÃO usar em atômico):
+    MMB_SUITE_MIN_BYTES=10 MMB_SUITE_OUTPUT=/tmp/x $0 ...
+EOF
+  exit 3
+fi
+
 TOPLEVEL=$(git rev-parse --show-toplevel)
 BRANCH=$(git branch --show-current)
 WORKTREE_NAME=$(basename "$TOPLEVEL")
@@ -99,10 +148,11 @@ if [ -z "$PR_TITLE" ]; then
   PR_TITLE=$(git log -1 --pretty=format:'%s')
 fi
 
-# Body — construído via lib pra testabilidade. SUBISSUE já validada.
+# Body — construído via lib pra testabilidade. SUBISSUE e SUITE_OUTPUT
+# já validadas no pré-flight acima.
 TMP_BODY=$(mktemp)
 COMMITS_LIST=$(git log "$DEFAULT_BRANCH..HEAD" --no-merges --pretty=format:'- %s')
-mmb_build_pr_body "$SUBISSUE" "$COMMITS_LIST" "$WORKTREE_NAME" > "$TMP_BODY"
+mmb_build_pr_body "$SUBISSUE" "$COMMITS_LIST" "$WORKTREE_NAME" "$SUITE_OUTPUT" > "$TMP_BODY"
 
 echo "→ gh pr create (base: $DEFAULT_BRANCH)..."
 PR_URL=$(gh pr create \
