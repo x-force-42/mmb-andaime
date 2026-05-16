@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mmb — cold start em potência máxima</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-elev: #161922;
+    --bg-code: #0a0c11;
+    --fg: #e6e7ea;
+    --fg-dim: #9aa0aa;
+    --fg-faint: #5e6573;
+    --accent: #7cc4ff;
+    --accent-2: #a78bfa;
+    --green: #4ade80;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --border: #242833;
+    --border-soft: #1c2029;
+    --kbd-bg: #1f2330;
+    --maxw: 880px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafbfc;
+      --bg-elev: #ffffff;
+      --bg-code: #f4f5f7;
+      --fg: #1c1f26;
+      --fg-dim: #4a5260;
+      --fg-faint: #8a93a3;
+      --accent: #0969da;
+      --accent-2: #6f42c1;
+      --green: #1a7f37;
+      --yellow: #9a6700;
+      --red: #cf222e;
+      --border: #d8dde3;
+      --border-soft: #e6eaf0;
+      --kbd-bg: #eef0f4;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: 100vh;
+  }
+  nav.toc {
+    position: sticky; top: 0; align-self: start;
+    height: 100vh; overflow-y: auto;
+    padding: 24px 20px;
+    border-right: 1px solid var(--border);
+    background: var(--bg-elev);
+    font-size: 14px;
+  }
+  nav.toc h2 {
+    margin: 0 0 14px; font-size: 13px;
+    font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--fg-dim);
+  }
+  nav.toc ul { list-style: none; padding: 0; margin: 0 0 18px; }
+  nav.toc li { margin: 2px 0; }
+  nav.toc a {
+    color: var(--fg-dim); text-decoration: none;
+    display: block; padding: 4px 8px;
+    border-radius: 4px; border-left: 2px solid transparent;
+  }
+  nav.toc a:hover { color: var(--fg); background: var(--bg-code); border-left-color: var(--accent); }
+  main { padding: 48px 56px 96px; max-width: var(--maxw); }
+  header.hero { margin-bottom: 56px; padding-bottom: 32px; border-bottom: 1px solid var(--border-soft); }
+  header.hero .eyebrow {
+    color: var(--accent); font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px;
+  }
+  header.hero h1 { font-size: 40px; margin: 0 0 12px; letter-spacing: -0.02em; font-weight: 700; }
+  header.hero h1 code { color: var(--accent-2); font-size: inherit; background: none; padding: 0; }
+  header.hero p.lede { font-size: 18px; color: var(--fg-dim); margin: 0 0 24px; max-width: 640px; }
+  .pill-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .pill {
+    display: inline-block; padding: 4px 10px;
+    border-radius: 999px; font-size: 12px; font-weight: 500;
+    border: 1px solid var(--border); color: var(--fg-dim);
+    background: var(--bg-elev);
+  }
+  .pill.ok   { color: var(--green);  border-color: var(--green);  }
+  .pill.warn { color: var(--yellow); border-color: var(--yellow); }
+  .pill.bad  { color: var(--red);    border-color: var(--red);    }
+  h2 {
+    font-size: 26px; margin: 56px 0 16px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border-soft);
+    font-weight: 600; letter-spacing: -0.01em;
+  }
+  h3 { font-size: 19px; margin: 32px 0 10px; font-weight: 600; }
+  h4 {
+    font-size: 14px; margin: 18px 0 6px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--fg-dim); font-weight: 600;
+  }
+  p { margin: 12px 0; }
+  a { color: var(--accent); }
+  ul, ol { padding-left: 22px; }
+  li { margin: 4px 0; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.92em; background: var(--bg-code);
+    padding: 1px 6px; border-radius: 4px;
+    border: 1px solid var(--border-soft);
+  }
+  pre {
+    background: var(--bg-code); padding: 14px 16px;
+    border-radius: 8px; overflow-x: auto;
+    border: 1px solid var(--border-soft);
+    font-size: 13px; line-height: 1.55; margin: 12px 0;
+  }
+  pre code { background: none; border: none; padding: 0; font-size: inherit; }
+  pre .c-prompt { color: var(--fg-faint); user-select: none; }
+  pre .c-cmd    { color: var(--accent); }
+  pre .c-arg    { color: var(--fg); }
+  pre .c-flag   { color: var(--accent-2); }
+  pre .c-cmt    { color: var(--fg-faint); font-style: italic; }
+  pre .c-ok     { color: var(--green); }
+  pre .c-warn   { color: var(--yellow); }
+  pre .c-bad    { color: var(--red); }
+  pre .c-bold   { font-weight: 700; }
+  kbd {
+    display: inline-block; padding: 1px 6px;
+    font-family: ui-monospace, monospace; font-size: 0.85em;
+    background: var(--kbd-bg); border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: 4px;
+  }
+  .step-block {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+    position: relative;
+  }
+  .step-block .step-num {
+    position: absolute; top: -14px; left: 16px;
+    background: var(--accent); color: var(--bg);
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px;
+    border: 3px solid var(--bg);
+  }
+  .step-block h3 { margin-top: 8px; }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--bg-elev); padding: 12px 16px;
+    margin: 16px 0; border-radius: 0 6px 6px 0; font-size: 14px;
+  }
+  .callout.warn { border-left-color: var(--yellow); }
+  .callout.bad  { border-left-color: var(--red); }
+  .callout.ok   { border-left-color: var(--green); }
+  .callout p:first-child { margin-top: 0; }
+  .callout p:last-child  { margin-bottom: 0; }
+  .callout .label {
+    font-weight: 700; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-right: 6px;
+  }
+  .callout.warn .label { color: var(--yellow); }
+  .callout.bad  .label { color: var(--red);    }
+  .callout.ok   .label { color: var(--green);  }
+  .callout      .label { color: var(--accent); }
+  table {
+    border-collapse: collapse; width: 100%;
+    margin: 12px 0; font-size: 14px;
+  }
+  th, td {
+    text-align: left; padding: 8px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+  }
+  th {
+    font-weight: 600; color: var(--fg-dim);
+    font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  td code { white-space: nowrap; }
+  .feature-card {
+    background: var(--bg-elev);
+    border: 2px solid var(--accent-2);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 24px 0;
+  }
+  .feature-card h3 { margin-top: 0; color: var(--accent-2); }
+  .briefing-box {
+    background: var(--bg-code);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    margin: 12px 0;
+  }
+  @media (max-width: 880px) {
+    body { grid-template-columns: 1fr; }
+    nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    main { padding: 32px 24px 64px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="toc">
+  <h2>Sumário</h2>
+  <ul>
+    <li><a href="#intro">Visão geral</a></li>
+    <li><a href="#what-is-high">O que é "potência alta"</a></li>
+  </ul>
+  <h2>Cold start</h2>
+  <ul>
+    <li><a href="#step-1">1. Pré-checks</a></li>
+    <li><a href="#step-2">2. Baseline verde</a></li>
+    <li><a href="#step-3">3. Subir o stack</a></li>
+    <li><a href="#step-4">4. Subir o relay + aquário</a></li>
+    <li><a href="#step-5">5. Verificar saúde</a></li>
+    <li><a href="#step-6">6. Abrir intent real</a></li>
+  </ul>
+  <h2>Feature de teste</h2>
+  <ul>
+    <li><a href="#feature">Sugestão concreta</a></li>
+    <li><a href="#briefing">Briefing pro mestre</a></li>
+    <li><a href="#expected">O que esperar</a></li>
+  </ul>
+  <h2>Operação</h2>
+  <ul>
+    <li><a href="#observing">Acompanhamento</a></li>
+    <li><a href="#review">Revisão &amp; merge</a></li>
+    <li><a href="#cleanup">Encerramento</a></li>
+  </ul>
+  <h2>Troubleshooting</h2>
+  <ul>
+    <li><a href="#tshoot">Quando algo trava</a></li>
+  </ul>
+</nav>
+
+<main>
+
+<header class="hero">
+  <div class="eyebrow">Andaime MMB · cold start guide</div>
+  <h1><code>up</code> — primeiro voo em potência máxima</h1>
+  <p class="lede">Como subir o andaime do zero, com Opus em todas as camadas, aquário renderizando, e uma feature concreta de teste pra exercitar o pipeline end-to-end pela primeira vez.</p>
+  <div class="pill-row">
+    <span class="pill">MMB_MODE=normal</span>
+    <span class="pill">Opus 4.7 · effort high</span>
+    <span class="pill warn">~$0.50 estimado pro primeiro teste</span>
+    <span class="pill ok">v0.5.0+</span>
+  </div>
+</header>
+
+<section id="intro">
+  <h2>Visão geral</h2>
+  <p>Esta página é o passo-a-passo do <strong>primeiro uso real</strong> do andaime — depois de toda a base de v0.3/v0.4/v0.5 estar paga. Não é tutorial inicial; assume que você já leu <a href="mmb-cli.html"><code>mmb-cli.html</code></a> e <a href="mmb-testing.html"><code>mmb-testing.html</code></a>.</p>
+  <p>O fluxo aqui pula intencionalmente todos os modos de teste — você não veio pra rodar smoke; veio pra <em>orquestrar trabalho de verdade</em> num dos três repos.</p>
+  <div class="callout"><p><span class="label">Pré-requisito mental</span>Esta é a primeira vez que você delega trabalho REAL pro andaime. Vai consumir tokens de Opus, mexer num repo de produto, abrir issue e PR no GitHub. Confirme que está em mood pra esse compromisso antes de subir.</p></div>
+</section>
+
+<section id="what-is-high">
+  <h2>O que é "potência alta"</h2>
+  <p>A configuração de modelos por camada vive em <code>.tooling/config.sh</code>, controlada por <code>MMB_MODE</code>:</p>
+  <table>
+    <thead><tr><th>Modo</th><th>Mestre</th><th>Orq local</th><th>Atômico</th><th>Pra quê</th></tr></thead>
+    <tbody>
+      <tr><td><code>fast</code></td><td>Haiku low</td><td>Haiku low</td><td>Haiku low</td><td>smoke / iteração do andaime</td></tr>
+      <tr><td><code>balanced</code></td><td>Opus high</td><td>Sonnet medium</td><td>Sonnet high</td><td>trabalho real <em>econômico</em></td></tr>
+      <tr><td><strong><code>normal</code></strong></td><td><strong>Opus high</strong></td><td><strong>Opus high</strong></td><td><strong>Opus high</strong></td><td><strong>potência máxima — este guia</strong></td></tr>
+    </tbody>
+  </table>
+  <p><strong><code>normal</code> é o default</strong> — se você não setar <code>MMB_MODE</code>, é o que vai rodar. Significa Opus 4.7 com effort high em master, workers (orq local) e atômicos. Heartbeat timeout em 600s, worker timeout em 1200s. É o mais caro e o mais capaz.</p>
+  <div class="callout ok"><p><span class="label">tradução prática</span>Não precisa exportar variável nenhuma. Só não rode <code>MMB_MODE=fast</code> que estará em potência máxima.</p></div>
+</section>
+
+<h2 style="margin-top:72px">Cold start — 6 passos</h2>
+
+<div class="step-block" id="step-1">
+  <div class="step-num">1</div>
+  <h3>Pré-checks</h3>
+  <p>Confirma que o ambiente está pronto antes de subir nada.</p>
+<pre><span class="c-prompt">$</span> <span class="c-cmd">cd</span> /home/eliezer/llab/MMB
+<span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">mmb</span> <span class="c-arg">preflight</span></pre>
+  <p>Saída esperada: <span class="pill ok">exit 0</span> — deps OK, gh autenticado, sem postmortems pendentes, sem branches <code>task/*</code> vivas, sem dirty state nos 3 repos.</p>
+  <p>Se exit 1 (warning), leia o motivo. Se for só <em>"branches task/* vivas"</em> de testes anteriores, considere rodar <code>reset-all.sh --dry-run</code> pra ver o que limparia — e se aprovar, <code>reset-all.sh</code> sem flags.</p>
+  <p>Se exit 2 (crítico), pare. Provavelmente <code>gh</code> não está autenticado ou alguma dep falta. Resolva antes de prosseguir.</p>
+</div>
+
+<div class="step-block" id="step-2">
+  <div class="step-num">2</div>
+  <h3>Baseline verde no sandbox</h3>
+  <p>Antes de tocar nada real, prova que o substrato está sadio:</p>
+<pre><span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">smoke.sh</span> <span class="c-arg">hardening</span></pre>
+  <p>~32s. Tem que terminar com <code>=== HARDENING PASS ===</code>. Roda em sandbox isolado em <code>/tmp/mmb-smoke-XXX/</code> — não toca seu inbox real.</p>
+  <p>Cobertura: L1-L6 (daemon lifecycle) + M1-M7 (falhas/recovery) + B1 (bridge regex) + AG1-AG9 (agents) + SP1-SP8 (spawn-atomic). Se algum cenário falhar, <strong>pare aqui</strong> e investigue — não tente subir o stack com sandbox vermelho.</p>
+</div>
+
+<div class="step-block" id="step-3">
+  <div class="step-num">3</div>
+  <h3>Subir o stack (tmux + daemon)</h3>
+  <p>Cria a sessão tmux <code>mmb</code> com todas as windows necessárias:</p>
+<pre><span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">up.sh</span></pre>
+  <p>O que isso faz:</p>
+  <ul>
+    <li>Cria sessão tmux <code>mmb</code>; anexa se já existir.</li>
+    <li>Window <strong>0 master</strong>: abre Claude Code interativo no diretório raiz. <em>É onde você vai conversar com o Mestre.</em></li>
+    <li>Window <strong>1 commd</strong>: roda o daemon de mensageria foreground.</li>
+    <li>Windows <strong>2-4 core/cockpit/aquarium</strong>: <code>tail -F</code> dos logs dos workers — só observação.</li>
+    <li>Window <strong>5 journal</strong>: tail do <code>logs/journal.jsonl</code> formatado com <code>jq</code>.</li>
+    <li>Window <strong>6 aquario</strong>: roda a viz PixiJS do <code>mmb-aquarium</code> (server local).</li>
+    <li>Window <strong>7 bridge</strong>: <code>aquario-bridge.py</code> publicando eventos no relay WS.</li>
+  </ul>
+  <div class="callout"><p><span class="label">flag útil</span>Se você já tem Claude Code aberto noutra janela e quer que ELE seja o Mestre, use <code>.tooling/bin/up.sh --no-master-claude</code> — a window 0 fica como zsh limpo, sem competir pelo papel.</p></div>
+</div>
+
+<div class="step-block" id="step-4">
+  <div class="step-num">4</div>
+  <h3>Abrir o aquário no browser</h3>
+  <p>A window <code>aquario</code> do tmux sobe um server local (provavelmente <code>vite</code> ou similar — verifique a saída). Pegue a URL que aparecer (algo como <code>http://localhost:5173</code>) e abra no browser.</p>
+  <p>Você deve ver a tela do aquário vazia. Quando o bridge começar a publicar eventos (próximos passos), criaturas vão aparecer.</p>
+  <div class="callout warn"><p><span class="label">teste rápido do canal</span>Antes de seguir, confirme na window <code>bridge</code> que tem a linha <code>ws: connected</code>. Sem ela, o aquário ficará vazio mesmo com workers ativos.</p></div>
+</div>
+
+<div class="step-block" id="step-5">
+  <div class="step-num">5</div>
+  <h3>Verificar saúde do stack</h3>
+  <p>Numa shell fora do tmux (ou criando uma split):</p>
+<pre><span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">mmb</span> <span class="c-arg">status</span></pre>
+  <p>Tem que mostrar:</p>
+  <ul>
+    <li><code>commd: <span style="color:var(--green)">RUNNING</span></code> com pid</li>
+    <li>Inboxes todos com <code>top=0</code></li>
+    <li>Sem branches <code>task/*</code> nos repos</li>
+    <li>Journal mostra último evento (provavelmente <code>commd iniciado</code>)</li>
+  </ul>
+  <p>Se algo aqui estiver torto, pare. Se tudo verde, você está pronto pra delegar trabalho de verdade.</p>
+</div>
+
+<div class="step-block" id="step-6">
+  <div class="step-num">6</div>
+  <h3>Abrir a intenção com o Mestre</h3>
+  <p>Vá pra window <strong>master</strong> do tmux (<kbd>Ctrl-b 0</kbd>). Você está conversando com o Mestre Claude. Ele vai seguir o ciclo das 5 fases:</p>
+  <ol>
+    <li><strong>Recepção</strong> — você descreve o que quer</li>
+    <li><strong>Discovery</strong> — Mestre lê o repo relevante read-only</li>
+    <li><strong>Briefing</strong> — Mestre te mostra o briefing pra aprovação</li>
+    <li><strong>Dispatch</strong> — após seu OK, Mestre dispara via <code>msg.sh</code></li>
+    <li><strong>Acompanhamento</strong> — Mestre relata status conforme chegam</li>
+  </ol>
+  <p>O importante: <strong>você só fala com o Mestre.</strong> Ele faz tudo via mailbox. Você acompanha pelo aquário (visual) e pelos logs (window journal, ou <code>mmb journal --follow</code> em outra shell).</p>
+</div>
+
+<h2 style="margin-top:72px" id="feature">Feature concreta pra testar</h2>
+
+<div class="feature-card">
+  <h3>Adicionar <code>README.md</code> ao <code>mmb-core</code></h3>
+  <p>O <code>mmb-cockpit</code> tem <code>README.md</code>, o <code>mmb-aquarium</code> tem <code>README.md</code>, mas o <code>mmb-core</code> não tem nenhum. Isso é uma lacuna visível, isolada, e perfeita pra primeiro voo.</p>
+  <h4>Por que essa feature é boa pro primeiro teste</h4>
+  <ul>
+    <li><strong>Single-repo</strong>: só toca <code>mmb-core</code>. Não exercita fan-out (vem depois).</li>
+    <li><strong>Escopo travado</strong>: 1 arquivo novo. Não tem mil maneiras de fazer.</li>
+    <li><strong>Referências existentes</strong>: o atômico pode espelhar o estilo dos READMEs dos outros 2 repos.</li>
+    <li><strong>Sem deps externas</strong>: nenhum pacote novo, nenhuma config nova, nenhum teste novo necessário.</li>
+    <li><strong>Verificável em 30 segundos</strong>: você abre o PR, lê o README, mergeia ou pede ajuste.</li>
+    <li><strong>Custo previsível</strong>: ~$0.30–$0.50 de Opus. Dentro de um cap razoável pra prova de conceito.</li>
+  </ul>
+  <h4>Critério de aceite</h4>
+  <ul>
+    <li><code>mmb-core/README.md</code> existe na branch <code>task/*</code></li>
+    <li>Cobre: o que é o projeto, principais arquivos do top-level, como rodar (referenciando <code>pyproject.toml</code>), link pro <code>CLAUDE.md</code></li>
+    <li>Estilo coerente com READMEs dos outros 2 repos (tom, estrutura)</li>
+    <li>PR aberto no GitHub com label <code>task</code> e <code>project:mmb-core</code></li>
+    <li>Sub-issue criada (e linkada no PR)</li>
+  </ul>
+</div>
+
+<h3 id="briefing">Como falar isso pro Mestre</h3>
+<p>Vá na window <code>master</code> do tmux e cole isso (ou diga em suas palavras — o Mestre vai pedir clarificação se precisar):</p>
+<div class="briefing-box">Quero delegar uma melhoria pequena no mmb-core: adicionar um README.md.
+
+Contexto: mmb-cockpit e mmb-aquarium têm README.md no top-level, mmb-core não tem. É uma lacuna visível.
+
+Escopo:
+- 1 arquivo novo: mmb-core/README.md
+- Cobrir: o que é o projeto (bot Discord, Garagem, Meeseeks, API REST), principais arquivos do top-level (bot.py, claude_runner.py, embeds.py, etc), como rodar (pyproject.toml), link pro CLAUDE.md.
+- Estilo coerente com os READMEs dos outros 2 repos.
+
+Critério de pronto: PR aberto no x-force-42/mmb-core, label task + project:mmb-core,
+sub-issue criada e linkada.
+
+Pode produzir o briefing e me mostrar antes de despachar.</div>
+
+<div class="callout"><p><span class="label">o que o Mestre vai fazer</span>Ler os READMEs do cockpit e aquário pra ancorar estilo. Listar arquivos do top-level do mmb-core pra ter o que descrever. Produzir <code>master-briefing.md</code> em <code>.tooling/intents/&lt;data&gt;-readme-core/</code>. Te mostrar na conversa. Aguardar seu OK. Depois disparar via <code>msg.sh core briefing readme-core …</code>.</p></div>
+
+<h3 id="expected">O que esperar visualmente</h3>
+<ol>
+  <li><strong>~5s depois do dispatch:</strong> aquário mostra um meeseek <code>[W] worker-core-&lt;pid&gt;</code> nascendo (<em>born</em>).</li>
+  <li><strong>~10-30s depois:</strong> o worker do core (orq local) processa o briefing. Vai criar a issue no GitHub, spawnar um atômico via <code>spawn-atomic.sh</code>. O meeseek <code>worker-core</code> morre (<em>died_happy</em>).</li>
+  <li><strong>Aquário mostra um meeseek <code>[A] atomic-…</code></strong> nascendo — esse é o atômico fazendo o trabalho de verdade. Ele vai ficar vivo enquanto heartbeating, com health ~1.0.</li>
+  <li><strong>1-3 minutos:</strong> atômico edita arquivo, commita, push, abre PR via <code>open-pr.sh</code>. Meeseek atômico morre happy. PR aparece no GitHub.</li>
+  <li><strong>Imediatamente depois:</strong> outro meeseek <code>worker-core</code> nasce — o orq processando o status <code>pr-aberto-N</code> que volta pro Mestre.</li>
+  <li><strong>Mais 5-10s:</strong> meeseek <code>worker-master</code> nasce — o Mestre processando o status. Ele te conta na conversa que o PR está pronto.</li>
+</ol>
+<p>Total estimado: ~3-5 minutos do dispatch ao PR pronto pra revisão.</p>
+
+<h2 style="margin-top:72px" id="observing">Acompanhamento ao vivo</h2>
+<p>3 telas pra deixar abertas:</p>
+<table>
+  <thead><tr><th>Onde</th><th>O que olha</th></tr></thead>
+  <tbody>
+    <tr><td>Browser (aquário)</td><td>Criaturas nascendo, vivendo, morrendo. O fluxo visual completo.</td></tr>
+    <tr><td>tmux window <code>master</code></td><td>Conversa com o Mestre. Ele te conta o que está acontecendo conforme recebe status.</td></tr>
+    <tr><td>tmux window <code>journal</code></td><td>Stream estruturado dos eventos: dispatch, claim, done, dead, worker-done. É a auditoria.</td></tr>
+  </tbody>
+</table>
+<p>Se quiser ver detalhe de um worker específico, <code>Ctrl-b 2/3/4</code> (core/cockpit/aquarium) ou em outra shell:</p>
+<pre><span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">mmb</span> <span class="c-arg">logs</span> core <span class="c-flag">--follow</span></pre>
+
+<h2 style="margin-top:72px" id="review">Revisão &amp; merge</h2>
+<ol>
+  <li>Mestre te avisa quando o PR está aberto.</li>
+  <li>Abra o PR no GitHub.</li>
+  <li>Leia o README — verifica se cumpre o critério de aceite.</li>
+  <li>Se OK: clique <em>Squash and merge</em>. <strong>Não use merge tradicional</strong> — o método foi desenhado pra squash.</li>
+  <li>Se precisa de ajuste: comente no PR. O atômico já morreu — você pode pedir ao Mestre pra spawnar correção (ele faz outro briefing) ou editar manualmente.</li>
+</ol>
+<div class="callout"><p><span class="label">após o merge</span>Volte ao tmux window <code>master</code>. Conte ao Mestre que mergiou. Ele provavelmente vai sugerir rodar <code>task-end.sh</code> pra limpar a worktree + branch local — pode aprovar.</p></div>
+
+<h2 style="margin-top:72px" id="cleanup">Encerramento</h2>
+<p>Depois do PR mergeado e da worktree limpa:</p>
+<pre><span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">mmb</span> <span class="c-arg">status</span>
+<span class="c-cmt"># confirma: inbox limpo, sem branches task/*, .dead vazio</span></pre>
+<p>Se quiser parar o stack inteiro (encerrar a sessão de trabalho):</p>
+<pre><span class="c-prompt">$</span> tmux kill-session <span class="c-flag">-t</span> mmb
+<span class="c-cmt"># mata tudo: commd, bridge, aquario server, master Claude, tails</span></pre>
+<p>Se quiser apenas o reset pesado (PRs abertos, branches, etc — útil só se algo deu errado):</p>
+<pre><span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">reset-all.sh</span> <span class="c-flag">--dry-run</span>   <span class="c-cmt"># revisa o que faria</span>
+<span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">reset-all.sh</span>             <span class="c-cmt"># só se aprovou o dry-run</span></pre>
+<p>No final, você terá: 1 PR mergeado em <code>mmb-core</code>, 1 sub-issue fechada, journal com a história completa em <code>.tooling/logs/journal.jsonl</code>, e a sensação fundamental de que <strong>o andaime fez trabalho de verdade pela primeira vez</strong>.</p>
+
+<h2 style="margin-top:72px" id="tshoot">Troubleshooting — quando algo trava</h2>
+
+<h4>Mestre não responde / parece preso</h4>
+<p>Provavelmente está em "thinking" longo (Opus high effort). Aguarde até 30s. Se passar disso, <kbd>Ctrl-c</kbd> e tente reformular.</p>
+
+<h4>Nada aparece no aquário</h4>
+<p>Verifique nessa ordem:</p>
+<ol>
+  <li>Window <code>bridge</code> mostra <code>ws: connected</code>?</li>
+  <li>Window <code>commd</code> mostra <code>RUNNING</code>?</li>
+  <li>Browser apontando pra URL certa (geralmente Vite na 5173 ou 8080)?</li>
+  <li><code>mmb journal -n 20</code> mostra dispatches recentes?</li>
+</ol>
+
+<h4>Worker do core foi pra <code>.dead</code></h4>
+<p>Significa que o orq local estourou timeout (default 1200s em normal mode) ou retornou exit não-zero. Diagnóstico:</p>
+<pre><span class="c-prompt">$</span> <span class="c-cmd">mmb</span> <span class="c-arg">inbox</span> dead
+<span class="c-prompt">$</span> <span class="c-cmd">mmb</span> <span class="c-arg">logs</span> core <span class="c-flag">-n</span> 100</pre>
+<p>Provavelmente o briefing exigiu coisa que o orq não conseguiu cumprir (e.g., autenticação, permissão). Conte ao Mestre o que aconteceu — ele vai propor refinamento do briefing.</p>
+
+<h4>Atômico ficou zombie (health caindo no aquário)</h4>
+<p>Heartbeat parou. Pode ter crashado silenciosamente. Em outro shell:</p>
+<pre><span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">agents.sh</span> <span class="c-arg">list</span>
+<span class="c-prompt">$</span> .tooling/bin/<span class="c-cmd">agents.sh</span> <span class="c-arg">check-children</span> core</pre>
+<p>Se confirmado morto, conte ao Mestre — ele decide se deregistrar manualmente e re-spawnar.</p>
+
+<h4>Custou mais do que esperado</h4>
+<p>Pare o stack (<code>tmux kill-session -t mmb</code>) e revise <code>.tooling/logs/workers/&lt;dest&gt;.log</code> pra ver quantos workers foram invocados e o que cada um fez. Pode ter tido loop não detectado de question↔answer.</p>
+
+<div class="callout warn">
+  <p><span class="label">expectativa de custo</span>Primeira execução em potência máxima: estimativa $0.30-$0.50. Se passar de $1, há algo errado — pare e investigue. Workers em loop ou briefings ambíguos são as causas mais comuns.</p>
+</div>
+
+<footer style="margin-top:96px; padding-top:24px; border-top:1px solid var(--border-soft); color: var(--fg-faint); font-size:13px;">
+  <p>Andaime MMB · cold start em potência máxima</p>
+  <p>Veja também: <a href="mmb-cli.html"><code>mmb-cli.html</code></a> · <a href="mmb-testing.html"><code>mmb-testing.html</code></a> · <a href="profiles/master.md"><code>profiles/master.md</code></a></p>
+</footer>
+
+</main>
+</body>
+</html>
