@@ -36,14 +36,14 @@ case "$MMB_MODE" in
     _mmb_default_model="claude-sonnet-4-6"
     _mmb_default_effort="high"
     : "${MMB_HEARTBEAT_TIMEOUT_DEFAULT:=600}"
-    : "${MMB_WORKER_TIMEOUT_DEFAULT:=1200}"
+    : "${MMB_WORKER_TIMEOUT_DEFAULT:=600}"
     ;;
   normal)
     # Produção tradicional. Opus em todas as camadas. Qualidade > tudo.
     _mmb_default_model="claude-opus-4-7"
     _mmb_default_effort="high"
     : "${MMB_HEARTBEAT_TIMEOUT_DEFAULT:=600}"
-    : "${MMB_WORKER_TIMEOUT_DEFAULT:=1200}"
+    : "${MMB_WORKER_TIMEOUT_DEFAULT:=600}"
     ;;
   *)
     echo "config.sh: MMB_MODE inválido '$MMB_MODE' (use normal|fast|balanced)" >&2
@@ -118,10 +118,15 @@ unset _mmb_default_model _mmb_default_effort
 # sempre, bloqueando todas as próximas mensagens daquele dest.
 #
 # Defaults derivam de MMB_MODE (igual MMB_HEARTBEAT_TIMEOUT):
-#   fast=120s | balanced=1200s | normal=1200s.
+#   fast=120s | balanced=600s | normal=600s.
 # Override por sessão: MMB_WORKER_TIMEOUT=60 ...
+#
+# Histórico: era 1200s em normal/balanced. Reduzido pra 600s no épico
+# andaime-fortification-v08 (B1.1) — 1200s era janela cega longa demais
+# pra detectar worker travado em WSL2 saturado, contribuiu pro crash do
+# 2026-05-16 durante ux-refresh-v07.
 
-: "${MMB_WORKER_TIMEOUT:=${MMB_WORKER_TIMEOUT_DEFAULT:-1200}}"
+: "${MMB_WORKER_TIMEOUT:=${MMB_WORKER_TIMEOUT_DEFAULT:-600}}"
 
 # ─── Commd poll (safety net pro inotifywait) ─────────────────────
 # Intervalo (segundos) entre passadas de reconciliação periódica do
