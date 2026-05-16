@@ -259,7 +259,7 @@ run_foreground() {
 
   log "================================================================"
   log "commd iniciado (pid=$$ mode=$MMB_MODE)"
-  log "  watching: $INBOX_BASE/{master,core,cockpit,aquarium}/"
+  log "  watching: $INBOX_BASE/{master,core,cockpit,aquarium,logger}/"
   log "  logs:     $LOG_DIR/workers/<dest>.log"
   log "================================================================"
 
