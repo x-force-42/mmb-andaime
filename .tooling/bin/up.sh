@@ -112,12 +112,18 @@ fi
 # ─── Windows 6-7: aquário (relay+dev) + bridge — só fora do modo fast
 # Smoke (MMB_MODE=fast) não precisa de visualização viva.
 if [ "$MMB_MODE" != "fast" ] && [ -d "$MMB_ROOT/mmb-aquarium" ]; then
-  # Window aquario: tenta dev:full (sobe Vite + relay juntos via concurrently
-  # — script criado pela task 1.1 do épico aquario-bridge). Fallback p/
-  # dev separado caso 1.1 ainda não tenha mergeado.
+  # Window aquario: build estático (dist/) + relay WS + vite preview.
+  # ATENÇÃO: NÃO usa dev mode (HMR ao vivo) porque agentes podem estar
+  # editando src/ do mmb-aquarium em worktrees, e o ambiente runtime
+  # precisa estar congelado pra observação estável.
   tmux new-window -t "$SESSION" -n aquario -c "$MMB_ROOT/mmb-aquarium"
   tmux send-keys -t "$SESSION:aquario" \
-    "if npm run | grep -q dev:full; then npm run dev:full; else echo '⚠ dev:full não existe ainda (task 1.1 não mergeou). Rodando relay+dev separados:'; npm run relay & npm run dev; fi" C-m
+    "npm run relay & npm run preview -- --port 4174 --host 127.0.0.1" C-m
+
+  # Window cockpit-ui: build estático + vite preview (mesma estratégia).
+  tmux new-window -t "$SESSION" -n cockpit-ui -c "$MMB_ROOT/mmb-cockpit"
+  tmux send-keys -t "$SESSION:cockpit-ui" \
+    "npm run preview -- --port 4173 --host 127.0.0.1" C-m
 
   # Window bridge: python daemon que conecta no relay como publisher.
   tmux new-window -t "$SESSION" -n bridge -c "$MMB_ROOT"
@@ -128,9 +134,11 @@ fi
 # ─── Window logger: mmb-logger watch + serve — só fora do modo fast
 if [ "$MMB_MODE" != "fast" ] && [ -d "$MMB_ROOT/mmb-logger" ]; then
   tmux new-window -t "$SESSION" -n logger -c "$MMB_ROOT/mmb-logger"
-  # watch em background, serve em foreground (logs visíveis na window)
+  # Fase 3+ removeu o comando `watch` (era ingest_once/runner.py legado).
+  # Reconcile é one-shot; pra atualizar a DB com o estado atual, rodamos
+  # uma reconcile inicial e depois só `serve` em foreground.
   tmux send-keys -t "$SESSION:logger" \
-    "uv run mmb-logger watch &>/tmp/mmb-logger-watch.log & uv run mmb-logger serve" C-m
+    "uv run mmb-logger init-db && uv run mmb-logger reconcile && uv run mmb-logger serve" C-m
 fi
 
 tmux select-window -t "$SESSION:master"
