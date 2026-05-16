@@ -41,7 +41,7 @@ mkdir -p "$STATE_DIR" "$LOG_DIR/workers"
 # Cria inboxes + subdirs de lifecycle idempotente. Subdirs começam
 # com "." para não competir com .lock/.gitkeep no top-level e para
 # que find -name '.*' não as confunda com mensagens.
-for d in master core cockpit aquarium; do
+for d in master core cockpit aquarium logger; do
   mkdir -p "$INBOX_BASE/$d" \
            "$INBOX_BASE/$d/.processing" \
            "$INBOX_BASE/$d/.done" \
@@ -135,7 +135,7 @@ dispatch() {
 
   # Filtros
   case "$dest" in
-    master|core|cockpit|aquarium) ;;
+    master|core|cockpit|aquarium|logger) ;;
     *) log "skip: dest desconhecido em '$file' (dest=$dest)"; return ;;
   esac
   # Arquivos ocultos = infra (.lock, .gitkeep, etc)
@@ -207,7 +207,7 @@ dispatch() {
 # no mesmo arquivo.
 reconcile_once() {
   local d f basename
-  for d in master core cockpit aquarium; do
+  for d in master core cockpit aquarium logger; do
     while IFS= read -r -d '' f; do
       basename=$(basename "$f")
       case "$basename" in .*) continue ;; esac
@@ -271,7 +271,7 @@ run_foreground() {
   # excluir os subdirs de lifecycle), maxdepth=1 em cada.
   log "drain inicial..."
   local count=0
-  for d in master core cockpit aquarium; do
+  for d in master core cockpit aquarium logger; do
     while IFS= read -r f; do
       [ -z "$f" ] && continue
       dispatch "$f"
@@ -329,7 +329,8 @@ run_foreground() {
       "$INBOX_BASE"/master \
       "$INBOX_BASE"/core \
       "$INBOX_BASE"/cockpit \
-      "$INBOX_BASE"/aquarium
+      "$INBOX_BASE"/aquarium \
+      "$INBOX_BASE"/logger
   )
 }
 

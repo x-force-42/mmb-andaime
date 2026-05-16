@@ -26,7 +26,7 @@
 set -euo pipefail
 
 MMB_ROOT="${MMB_ROOT:-/home/eliezer/llab/MMB}"
-REPOS=(mmb-core mmb-cockpit mmb-aquarium)
+REPOS=(mmb-core mmb-cockpit mmb-aquarium mmb-logger)
 GH_OWNER="${MMB_GH_OWNER:-x-force-42}"
 
 DRY_RUN=0
@@ -95,7 +95,7 @@ phase_kill_claudes() {
     return
   fi
   local my_pane="${TMUX_PANE:-}"
-  for win in core cockpit aquarium; do
+  for win in core cockpit aquarium logger; do
     local pane
     pane=$(tmux list-panes -t "mmb:$win" -F "#{pane_id}" 2>/dev/null | head -1 || true)
     [ -z "$pane" ] && continue
@@ -230,7 +230,7 @@ phase_messaging() {
 
   if [ "$NO_ARCHIVE" -eq 0 ]; then
     run "mkdir -p '$ARCHIVE/inbox' '$ARCHIVE/intents' '$ARCHIVE/state' '$ARCHIVE/logs/workers'"
-    for d in master core cockpit aquarium; do
+    for d in master core cockpit aquarium logger; do
       run "mkdir -p '$ARCHIVE/inbox/$d'"
       if [ "$DRY_RUN" -eq 0 ]; then
         find "$tooling/inbox/$d" -maxdepth 1 -name '*.md' \
@@ -274,7 +274,7 @@ phase_messaging() {
     fi
   else
     # delete direto
-    for d in master core cockpit aquarium; do
+    for d in master core cockpit aquarium logger; do
       run "find '$tooling/inbox/$d' -maxdepth 1 -name '*.md' -delete"
       for sub in .processing .done .dead; do
         run "find '$tooling/inbox/$d/$sub' -maxdepth 1 -name '*.md' -delete 2>/dev/null || true"

@@ -4,7 +4,7 @@
 # Uso:
 #   msg.sh [--allow-offline] <to> <type> <subject-slug> <body-file> [thread]
 #
-#   <to>             master | core | cockpit | aquarium
+#   <to>             master | core | cockpit | aquarium | logger
 #   <type>           briefing | question | answer | status | error
 #   <subject-slug>   kebab-case curto (vira parte do nome do arquivo)
 #   <body-file>      caminho pra arquivo com o corpo da mensagem
@@ -62,7 +62,7 @@ if [ -z "$TO" ] || [ -z "$TYPE" ] || [ -z "$SUBJECT" ] || [ -z "$BODY_FILE" ]; t
   cat >&2 <<EOF
 Uso: $0 [--allow-offline] <to> <type> <subject-slug> <body-file> [thread]
 
-  to             : master | core | cockpit | aquarium
+  to             : master | core | cockpit | aquarium | logger
   type           : briefing | question | answer | status | error
   subject        : kebab-case curto
   body           : caminho do arquivo (- pra stdin)
@@ -78,8 +78,8 @@ fi
 
 # Validação dura de campos
 case "$TO" in
-  master|core|cockpit|aquarium) ;;
-  *) echo "ERRO: 'to' inválido: $TO (use master|core|cockpit|aquarium)" >&2; exit 2;;
+  master|core|cockpit|aquarium|logger) ;;
+  *) echo "ERRO: 'to' inválido: $TO (use master|core|cockpit|aquarium|logger)" >&2; exit 2;;
 esac
 
 case "$TYPE" in

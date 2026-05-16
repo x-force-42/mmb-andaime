@@ -7,7 +7,12 @@
 #   window 2 core     → tail -F logs/workers/core.log    (visualização)
 #   window 3 cockpit  → tail -F logs/workers/cockpit.log
 #   window 4 aquarium → tail -F logs/workers/aquarium.log
-#   window 5 journal  → tail -F logs/journal.jsonl | jq  (opcional)
+#   window 5 logger   → tail -F logs/workers/logger.log
+#   window 6 journal  → tail -F logs/journal.jsonl | jq  (opcional)
+#   window aquario    → relay + vite preview (UI aquarium)
+#   window cockpit-ui → vite preview (UI cockpit)
+#   window bridge     → aquario-bridge.py
+#   window logger-api → uv run mmb-logger serve (FastAPI :8765)
 #
 # Mudança crítica vs v0.1/v0.2: orq locais NÃO são mais sessões
 # Claude interativas. Eles viram processos efêmeros (workers)
@@ -41,14 +46,14 @@ MMB_ROOT="$(dirname "$TOOLING_DIR")"
 source "$TOOLING_DIR/config.sh"
 
 # Diretórios essenciais (idempotente)
-for d in master core cockpit aquarium; do
+for d in master core cockpit aquarium logger; do
   mkdir -p "$TOOLING_DIR/inbox/$d"
 done
 mkdir -p "$TOOLING_DIR/state/heartbeats" \
          "$TOOLING_DIR/logs/workers"
 
 # Toca os logs pra tail -F não reclamar de arquivo inexistente
-for d in master core cockpit aquarium; do
+for d in master core cockpit aquarium logger; do
   touch "$TOOLING_DIR/logs/workers/$d.log"
 done
 touch "$TOOLING_DIR/logs/commd.log"
@@ -90,9 +95,9 @@ tmux new-window -t "$SESSION" -n commd -c "$MMB_ROOT"
 tmux send-keys -t "$SESSION:commd" \
   "export MMB_MODE=$MMB_MODE; $TOOLING_DIR/bin/commd.sh fg" C-m
 
-# ─── Windows 2-4: tail -F dos workers ───────────────────────────
+# ─── Windows 2-5: tail -F dos workers (core, cockpit, aquarium, logger) ──
 WINDOW_IDX=2
-for project in mmb-core mmb-cockpit mmb-aquarium; do
+for project in mmb-core mmb-cockpit mmb-aquarium mmb-logger; do
   short="${project#mmb-}"
   if [ -d "$MMB_ROOT/$project/.git" ]; then
     tmux new-window -t "$SESSION" -n "$short" -c "$MMB_ROOT/$project"
@@ -131,13 +136,15 @@ if [ "$MMB_MODE" != "fast" ] && [ -d "$MMB_ROOT/mmb-aquarium" ]; then
     "$TOOLING_DIR/bin/aquario-bridge.sh" C-m
 fi
 
-# ─── Window logger: mmb-logger watch + serve — só fora do modo fast
+# ─── Window logger-api: FastAPI serve do mmb-logger ─────────────
+# Renomeado de "logger" para "logger-api" desde que mmb-logger virou um
+# 4º orq (window "logger" agora é o tail dos logs do worker orq).
 if [ "$MMB_MODE" != "fast" ] && [ -d "$MMB_ROOT/mmb-logger" ]; then
-  tmux new-window -t "$SESSION" -n logger -c "$MMB_ROOT/mmb-logger"
+  tmux new-window -t "$SESSION" -n logger-api -c "$MMB_ROOT/mmb-logger"
   # Fase 3+ removeu o comando `watch` (era ingest_once/runner.py legado).
   # Reconcile é one-shot; pra atualizar a DB com o estado atual, rodamos
   # uma reconcile inicial e depois só `serve` em foreground.
-  tmux send-keys -t "$SESSION:logger" \
+  tmux send-keys -t "$SESSION:logger-api" \
     "uv run mmb-logger init-db && uv run mmb-logger reconcile && uv run mmb-logger serve" C-m
 fi
 

@@ -22,7 +22,7 @@
 #    "pid":<int>,"task":"<id>","epic":"<slug>","reason":"<str>"}
 #
 # Convenções:
-# - agent-id de orq:     master | core | cockpit | aquarium
+# - agent-id de orq:     master | core | cockpit | aquarium | logger
 # - agent-id de atômico: <repo-short>-<task-id> (ex: core-X1)
 
 set -euo pipefail
