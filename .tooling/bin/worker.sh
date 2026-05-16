@@ -49,7 +49,10 @@ fi
 case "$DEST" in
   master)
     CWD="$MMB_ROOT"
-    PROFILE="$TOOLING_DIR/profiles/master.md"
+    # B2A v0.8+: worker-master usa profile dedicado, não o profile do
+    # Mestre interativo. Stateless rider continua sendo apendado pra
+    # reforçar que esta invocação é descartável (1 mensagem, morre).
+    PROFILE="$TOOLING_DIR/profiles/master-worker.md"
     LAYER="master"
     ;;
   core)
