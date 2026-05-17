@@ -215,6 +215,29 @@ section_watchdog() {
   if grep -q '"sev":"error"' <<<"$line"; then pass "evento tem sev=error"; else fail "evento sem sev=error"; fi
   if grep -q '"kind":"watchdog-stale"' <<<"$line"; then pass "evento tem kind=watchdog-stale"; else fail "evento sem kind"; fi
   if grep -q '"dest":"cockpit"' <<<"$line"; then pass "evento identifica dest=cockpit"; else fail "dest errado"; fi
+
+  # Hermeticidade: o teste NÃO pode ter tocado paths reais.
+  # Antes do fix do _MMB_TEST_MODE no commd.sh, o source reescrevia
+  # STATE_DIR/LOG_DIR/JOURNAL_LOG pros paths de produção, e este
+  # teste poluía o journal real com entries com stale_seconds=5 /
+  # threshold=2.
+  local real_state="$TOOLING_DIR/state"
+  local real_journal="$TOOLING_DIR/logs/journal.jsonl"
+  if [ "$STATE_DIR" != "$real_state" ]; then
+    pass "STATE_DIR preservado como sandbox ($STATE_DIR)"
+  else
+    fail "STATE_DIR aponta pra produção — teste não é hermético"
+  fi
+  if [ "$JOURNAL_LOG" != "$real_journal" ]; then
+    pass "JOURNAL_LOG preservado como sandbox ($JOURNAL_LOG)"
+  else
+    fail "JOURNAL_LOG aponta pra produção — teste não é hermético"
+  fi
+  if [ ! -f "$real_state/heartbeat-cockpit.txt" ]; then
+    pass "heartbeat-cockpit real não foi tocado pelo teste"
+  else
+    fail "heartbeat-cockpit real existe — teste vazou estado"
+  fi
 }
 
 # ── runner ───────────────────────────────────────────────────────
