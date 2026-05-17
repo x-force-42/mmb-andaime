@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MMB — Diário de bordo</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-elev: #161922;
+    --bg-code: #0a0c11;
+    --fg: #e6e7ea;
+    --fg-dim: #9aa0aa;
+    --fg-faint: #5e6573;
+    --accent: #7cc4ff;
+    --accent-2: #a78bfa;
+    --green: #4ade80;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --border: #242833;
+    --border-soft: #1c2029;
+    --kbd-bg: #1f2330;
+    --maxw: 920px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafbfc;
+      --bg-elev: #ffffff;
+      --bg-code: #f4f5f7;
+      --fg: #1c1f26;
+      --fg-dim: #4a5260;
+      --fg-faint: #8a93a3;
+      --accent: #0969da;
+      --accent-2: #6f42c1;
+      --green: #1a7f37;
+      --yellow: #9a6700;
+      --red: #cf222e;
+      --border: #d8dde3;
+      --border-soft: #e6eaf0;
+      --kbd-bg: #eef0f4;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15.5px;
+    line-height: 1.65;
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: 100vh;
+  }
+  nav.toc {
+    position: sticky; top: 0; align-self: start;
+    height: 100vh; overflow-y: auto;
+    padding: 28px 22px;
+    border-right: 1px solid var(--border);
+    background: var(--bg-elev);
+    font-size: 14px;
+  }
+  nav.toc .brand {
+    font-weight: 700; font-size: 16px;
+    color: var(--fg); margin-bottom: 4px;
+  }
+  nav.toc .brand small {
+    display: block; font-weight: 400; font-size: 12px;
+    color: var(--fg-faint); margin-top: 2px;
+  }
+  nav.toc h2 {
+    margin: 24px 0 10px; font-size: 11px;
+    font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--fg-dim);
+  }
+  nav.toc ul { list-style: none; padding: 0; margin: 0; }
+  nav.toc li { margin: 1px 0; }
+  nav.toc a {
+    color: var(--fg-dim); text-decoration: none;
+    display: block; padding: 5px 10px;
+    border-radius: 4px; border-left: 2px solid transparent;
+    transition: all 0.12s ease;
+  }
+  nav.toc a:hover {
+    color: var(--fg); background: var(--bg-code);
+    border-left-color: var(--accent);
+  }
+  nav.toc a.sub { padding-left: 24px; font-size: 13px; color: var(--fg-faint); }
+  nav.toc a.sub:hover { color: var(--fg-dim); }
+  main {
+    padding: 48px 56px 120px;
+    max-width: var(--maxw);
+  }
+  header.hero {
+    margin-bottom: 48px; padding-bottom: 28px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  header.hero .eyebrow {
+    color: var(--accent); font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.12em;
+  }
+  header.hero h1 {
+    margin: 8px 0 12px; font-size: 32px;
+    font-weight: 700; letter-spacing: -0.02em;
+  }
+  header.hero p.lede {
+    color: var(--fg-dim); font-size: 16px; max-width: 720px;
+  }
+  section.entry {
+    margin-bottom: 56px; padding-top: 8px;
+    scroll-margin-top: 24px;
+  }
+  section.entry h2 {
+    margin: 0 0 4px; font-size: 24px;
+    font-weight: 700; letter-spacing: -0.01em;
+  }
+  section.entry .meta {
+    color: var(--fg-faint); font-size: 13px;
+    margin-bottom: 28px;
+  }
+  section.entry .meta .tag {
+    display: inline-block;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px 7px;
+    font-family: ui-monospace, monospace; font-size: 12px;
+    color: var(--accent); margin-right: 8px;
+  }
+  section.entry h3 {
+    margin: 28px 0 10px; font-size: 16px;
+    font-weight: 600; color: var(--accent-2);
+    scroll-margin-top: 24px;
+  }
+  section.entry h3 .badge {
+    display: inline-block; vertical-align: middle;
+    font-size: 11px; padding: 2px 6px; border-radius: 3px;
+    font-weight: 600; margin-left: 8px;
+  }
+  .badge.ok { background: rgba(74, 222, 128, 0.15); color: var(--green); }
+  .badge.warn { background: rgba(251, 191, 36, 0.15); color: var(--yellow); }
+  .badge.fail { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+  section.entry p { margin: 10px 0; }
+  section.entry ul { padding-left: 22px; }
+  section.entry li { margin: 4px 0; }
+  section.entry code {
+    background: var(--bg-code); border: 1px solid var(--border-soft);
+    border-radius: 3px; padding: 1px 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.88em;
+  }
+  .saldo {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 14px 18px; border-radius: 4px;
+    margin: 20px 0 28px;
+    font-size: 14px;
+  }
+  .saldo strong { color: var(--fg); }
+  .insight {
+    background: var(--bg-elev); border: 1px solid var(--border-soft);
+    border-left: 3px solid var(--accent-2);
+    padding: 12px 16px; border-radius: 4px;
+    margin: 12px 0;
+    font-size: 14.5px;
+    color: var(--fg-dim);
+  }
+  .insight strong { color: var(--fg); }
+  table {
+    border-collapse: collapse; width: 100%;
+    margin: 14px 0; font-size: 13.5px;
+  }
+  th, td {
+    text-align: left; padding: 8px 12px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  th {
+    font-weight: 600; color: var(--fg-dim);
+    border-bottom-color: var(--border);
+    font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  td code { font-size: 0.85em; }
+  td.center { text-align: center; }
+  footer {
+    margin-top: 80px; padding-top: 24px;
+    border-top: 1px solid var(--border-soft);
+    color: var(--fg-faint); font-size: 13px;
+  }
+  .convencao {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 6px; padding: 18px 22px;
+    margin: 24px 0;
+  }
+  .convencao h3 { margin-top: 0; }
+  .convencao ul { margin-bottom: 0; }
+  @media (max-width: 800px) {
+    body { grid-template-columns: 1fr; }
+    nav.toc { position: static; height: auto; border-right: none;
+              border-bottom: 1px solid var(--border); }
+    main { padding: 32px 24px 80px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="toc">
+  <div class="brand">
+    MMB
+    <small>Diário de bordo</small>
+  </div>
+
+  <h2>Pontos de evolução</h2>
+  <ul>
+    <li><a href="#sobre">Sobre este doc</a></li>
+    <li><a href="#convencao">Convenção de updates</a></li>
+  </ul>
+
+  <h2>Entries</h2>
+  <ul>
+    <li><a href="#v0-9-0">v0.9.0 — Andaime endurecido</a>
+      <ul>
+        <li><a href="#v0-9-0-saldo" class="sub">Saldo</a></li>
+        <li><a href="#v0-9-0-mudancas" class="sub">O que mudou</a></li>
+        <li><a href="#v0-9-0-aprendizado" class="sub">O que aprendemos</a></li>
+        <li><a href="#v0-9-0-validacao" class="sub">Validação em produção</a></li>
+        <li><a href="#v0-9-0-bugs-novos" class="sub">Bugs novos</a></li>
+        <li><a href="#v0-9-0-debitos" class="sub">Débitos abertos</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+
+<main>
+
+<header class="hero">
+  <div class="eyebrow">Diário de bordo</div>
+  <h1>Pontos de evolução do MMB</h1>
+  <p class="lede">
+    Registro humano-legível de marcos do método. Diferente do
+    <code>changelog</code> (lista de commits), do <code>journal.jsonl</code>
+    (eventos máquina-legíveis) e dos <code>.tooling/designs/*</code>
+    (decisões técnicas por versão). Aqui mora o <strong>saldo
+    reflexivo</strong>: o que mudou, o que aprendemos, o que ficou
+    aberto.
+  </p>
+</header>
+
+<section id="sobre">
+  <h3>Sobre este doc <span class="badge ok">canônico</span></h3>
+  <p>
+    Diário de evolução do <strong>método</strong> (não dos produtos
+    sobre o método). Cada entry corresponde a um marco significativo
+    — tag git, virada de fase, fim de uma esteira corretiva, ou
+    descoberta de padrão que muda como o andaime opera.
+  </p>
+  <p>
+    Não substitui:
+  </p>
+  <ul>
+    <li>
+      <code>.tooling/logs/journal.jsonl</code> — eventos estruturados,
+      consumidos por <code>review-cycle.sh</code> ao fechar épico.
+    </li>
+    <li>
+      <code>.tooling/designs/v0.1-comm-robustness.md</code>,
+      <code>v0.2-journal-and-review.md</code> — design docs por versão
+      (técnico).
+    </li>
+    <li>
+      <code>.tooling/intents/&lt;date&gt;-&lt;slug&gt;/master-briefing.md</code> —
+      nota narrativa final por épico (local, granular).
+    </li>
+    <li>
+      Tag annotations no git — release notes curtas, bullets.
+    </li>
+  </ul>
+</section>
+
+<section id="convencao" class="convencao">
+  <h3>Convenção de updates</h3>
+  <ul>
+    <li><strong>Quando atualizar:</strong> ao fim de marco significativo
+      — não por PR, não por épico individual.</li>
+    <li><strong>Quem atualiza:</strong> Mestre interativo, ao fim do
+      marco, mostrando pro Rick antes de commitar.</li>
+    <li><strong>Ordem:</strong> cronológica reversa (mais recente no
+      topo).</li>
+    <li><strong>Forma:</strong> saldo (números) + o que mudou (3-5
+      bullets concretos) + o que aprendemos (1-3 insights reflexivos)
+      + débitos abertos com gatilhos explícitos.</li>
+    <li><strong>Não:</strong> diário de conversa, atualização contínua
+      por commit, registro de cada bug. Para isso, há outras peças.</li>
+  </ul>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+
+<section class="entry" id="v0-9-0">
+  <h2>v0.9.0 — Andaime endurecido pós-esteira corretiva</h2>
+  <div class="meta">
+    <span class="tag">v0.9.0</span> 2026-05-17 ·
+    commit <code>dd77380</code> · sessão 2026-05-16 → 2026-05-17
+  </div>
+
+  <p>
+    Marco saindo da <code>v0.8.0</code>: ciclo de correções operacionais
+    sobre falhas observadas durante o épico <code>dark-mode</code> e o
+    teste real <code>tz-cockpit-dashboard</code>, mais um pós-tag de
+    higiene (cleanup de docs/tasks, bucketing BRT) e a primeira
+    validação em produção real das fortificações.
+  </p>
+
+  <h3 id="v0-9-0-saldo">Saldo</h3>
+  <div class="saldo">
+    <strong>10 PRs</strong> no <code>mmb-andaime</code> +
+    <strong>3 PRs</strong> no <code>mmb-logger</code><br>
+    <strong>3 épicos de produto entregues</strong>
+    (<code>dark-mode</code>, <code>tz-cockpit-dashboard</code>,
+    <code>cockpit-ux-layout-filtros</code>)<br>
+    <strong>295 testes</strong> verdes no tooling (era 252; +43
+    novos nesta janela)<br>
+    <strong>167 testes</strong> verdes no <code>mmb-logger</code>
+    (+15 novos)<br>
+    <strong>2 bugs reais</strong> do andaime detectados pelo próprio
+    andaime sem cutucada do Rick (validação real de B2+B3)
+  </div>
+
+  <h3 id="v0-9-0-mudancas">O que mudou de fato</h3>
+
+  <p><strong>Contratos:</strong></p>
+  <ul>
+    <li>
+      Schema semântico dos <code>status</code> no
+      <code>protocol.md</code>: payload obrigatório por marco
+      (<code>issue-criada-N</code>, <code>pr-aberto-N</code>,
+      <code>task-fechada-*</code>), worker-master faz triagem
+      determinística.
+    </li>
+    <li>
+      Convenção de fuso em <code>source-of-truth.md</code>: storage
+      sempre UTC; agregação diária em <code>/api/metricas/overview</code>
+      é BRT (UTC-3); não generaliza pra outros campos.
+    </li>
+  </ul>
+
+  <p><strong>Mecanismos novos:</strong></p>
+  <ul>
+    <li>
+      Hook <code>inject-digest-tail.sh</code>: marcos rotineiros do
+      digest aparecem no próximo prompt do Mestre interativo (cursor
+      monotônico, limite 10 por injeção).
+    </li>
+    <li>
+      Cron interno do reconcile no <code>mmb-logger serve</code> (a
+      cada 300s) + endpoints <code>GET /api/reconcile-status</code> e
+      <code>POST /api/reconcile</code>.
+    </li>
+    <li>
+      <code>_enrich_epicos_closure</code> no reconciler: épico fecha
+      automaticamente ao ler <code>Status: ✅</code> no master-briefing;
+      reabre se ✅ é removido (estado derivado segue fonte canônica).
+    </li>
+  </ul>
+
+  <p><strong>Endurecimento (B1/B2/B3):</strong></p>
+  <ul>
+    <li>
+      <strong>B2</strong>: guard <code>MMB_AGENT_ID != master</code> nos
+      hooks UserPromptSubmit — impede workers stateless de consumirem
+      digest/pending-human destinados ao Mestre.
+    </li>
+    <li>
+      <strong>B3</strong>: atomicidade declarada da escala
+      (<code>digest ⚠ + write-pending-human.sh</code> conjuntos) no
+      profile do worker-master.
+    </li>
+    <li>
+      <strong>B1</strong>: reforço imperativo do schema
+      <code>pr-aberto-N</code> no profile do orq local (tabela
+      enumerativa + receita executável + caso real referenciado).
+    </li>
+  </ul>
+
+  <p><strong>Higiene operacional:</strong></p>
+  <ul>
+    <li>
+      <code>review-cycle.sh</code> não morre mais silencioso quando há
+      errors sem <code>resolves</code>.
+    </li>
+    <li>
+      <code>commd.sh</code> respeita <code>_MMB_TEST_MODE</code> —
+      teste de watchdog não polui mais journal real.
+    </li>
+    <li>
+      Janela interna do <code>heartbeat_tick</code> 60→120s, cobrindo
+      latência pós-output do <code>claude -p</code>.
+    </li>
+    <li>
+      Cleanup automático de <code>docs/tasks/*.md</code> untracked em
+      <code>task-end</code>/<code>task-abort</code>.
+    </li>
+    <li>
+      Bucketing BRT em <code>/api/metricas/overview</code>: storage UTC
+      preservado, projeção do "dia operacional local" em runtime via
+      modifier SQLite.
+    </li>
+  </ul>
+
+  <h3 id="v0-9-0-aprendizado">O que aprendemos</h3>
+
+  <div class="insight">
+    <strong>Reforço imperativo no profile não é contrato forte.</strong>
+    B1 reincidiu nos 2 workers (cockpit + logger) mesmo após o reforço
+    do PR #7 (warning ⚠ + tabela + receita executável + cláusula
+    honesta + caso real). Critério registrado <em>antes</em> da
+    reincidência (no body do próprio PR #7) acionou automaticamente a
+    promoção pra wrapper obrigatório — o método se auto-disciplina
+    quando o gatilho é explícito.
+  </div>
+
+  <div class="insight">
+    <strong>Hooks UserPromptSubmit rodam em qualquer claude da config —
+    inclusive workers stateless.</strong> Foi anti-padrão estrutural
+    descoberto em produção: cursor do digest avançava porque o
+    <code>claude -p</code> do worker carrega os mesmos hooks.
+    Guard por <code>MMB_AGENT_ID != master</code> resolve. Lição
+    transferível: todo hook destinado ao Mestre interativo precisa
+    provar contexto antes de produzir efeito colateral.
+  </div>
+
+  <div class="insight">
+    <strong>Atomicidade operacional precisa ser declarada, não
+    presumida.</strong> Worker-master fazia a parte cheap (digest ⚠) e
+    pulava a parte cara (<code>write-pending-human.sh</code>),
+    deixando o Mestre cego. Wording explícito
+    "<code>ESCALA = digest ⚠ + pending-human</code>" no profile
+    eliminou o gap. Sempre que houver sequência de 2+ efeitos pra
+    consequência semântica única, nomear como par atômico.
+  </div>
+
+  <div class="insight">
+    <strong>O andaime começou a auto-detectar bugs do próprio
+    andaime.</strong> O épico <code>cockpit-ux-layout-filtros</code>
+    (último desta janela) gerou 2 escalações pra pending-human
+    sinalizando que B1 ainda não estava resolvido — sem cutucada do
+    Rick, sem revisão humana adicional. B2+B3 validados em produção
+    real: tab tmux ficou vermelha, digest mostrou ⚠, Mestre recebeu o
+    sinal no turn seguinte.
+  </div>
+
+  <h3 id="v0-9-0-validacao">Validação em produção real</h3>
+
+  <table>
+    <thead>
+      <tr><th>Fortificação</th><th>Como foi exercitada</th><th>Resultado</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>B2</strong> — guard hooks</td>
+        <td>Workers stateless do épico final processaram mensagens
+          enquanto hooks rodavam pro Mestre</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>B3</strong> — atomicidade escala</td>
+        <td>Worker-master escalou 2 <code>pr-aberto-N</code> sem
+          <code>suite_status</code>; produziu digest ⚠ + pending-human
+          + tab vermelha juntos</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>PR #8</strong> — cleanup docs/tasks</td>
+        <td><code>task-end.sh</code> rodou após merge, removeu 2
+          arquivos órfãos automaticamente</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>Reconcile auto</strong></td>
+        <td>Cron de 300s capturou pós-merge dos 3 épicos sem
+          intervenção</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>Closure via ✅</strong></td>
+        <td>3 épicos fecharam ao reconcile detectar marcador no
+          master-briefing</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>B1</strong> — schema pr-aberto</td>
+        <td>Mesmos 2 workers omitiram <code>suite_status</code> apesar
+          do reforço</td>
+        <td class="center"><span class="badge fail">✗</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 id="v0-9-0-bugs-novos">Bugs novos descobertos nesta janela</h3>
+
+  <ul>
+    <li>
+      <strong>B1 reincidente</strong> — schema <code>pr-aberto-N</code>
+      ignorado por workers mesmo após reforço imperativo. Gatilho
+      explícito do PR #7 acionou promoção pra wrapper obrigatório
+      <code>send-status-pr-opened.sh</code>.
+    </li>
+    <li>
+      <strong>Bucketing UTC em métricas diárias</strong> — eventos
+      rodados entre 21:00-23:59 BRT caíam no dia UTC seguinte;
+      Dashboard contabilizava no dia errado. Resolvido com modifier
+      SQLite, storage preservado.
+    </li>
+    <li>
+      <strong>Bridge tail -F latência</strong> — born do segundo
+      worker no aquarium apareceu com offset de ~2min, causando
+      percepção de "só um worker acionado". Não-crítico.
+    </li>
+    <li>
+      <strong>Gap arquitetural: iteração no mesmo PR</strong> — atômico
+      morre após <code>open-pr.sh</code>; orq stateless; sem fluxo
+      nativo de "refinar antes do merge". Caminhos pragmáticos:
+      mini-épico pós-merge ou edição direta. Registrado como direção
+      futura ("modo iterativo").
+    </li>
+  </ul>
+
+  <h3 id="v0-9-0-debitos">Débitos abertos com gatilhos</h3>
+
+  <table>
+    <thead>
+      <tr><th>Débito</th><th>Gatilho pra implementar</th><th>Estado</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>B1.1</strong> — wrapper
+          <code>send-status-pr-opened.sh</code></td>
+        <td>B1 reincidir após reforço do PR #7</td>
+        <td class="center"><span class="badge fail">disparado</span></td>
+      </tr>
+      <tr>
+        <td>Heartbeats órfãos em
+          <code>state/heartbeats/&lt;id&gt;.alive</code></td>
+        <td>Padrão visível em produção (cockpit-M4, logger-L2.1
+          persistem após cleanup)</td>
+        <td class="center"><span class="badge warn">pendente</span></td>
+      </tr>
+      <tr>
+        <td>Reiniciar <code>mmb-logger serve</code> após PR</td>
+        <td>Ritual recorrente sem automação</td>
+        <td class="center"><span class="badge warn">pendente</span></td>
+      </tr>
+      <tr>
+        <td><strong>Spike</strong> Master → Planner → Atomic</td>
+        <td>Atomic decidir errado / Master gargalo autoral /
+          PR exigir retrabalho por prompt pouco aderente</td>
+        <td class="center"><span class="badge warn">adiado</span></td>
+      </tr>
+      <tr>
+        <td>Aquarium <code>block_added</code> por commit concreto</td>
+        <td>Demanda concreta + decisão arquitetural entre X1/X2/X3</td>
+        <td class="center"><span class="badge warn">adiado</span></td>
+      </tr>
+      <tr>
+        <td>Política sobre commit de <code>docs/tasks/*.md</code> por
+          atômicos (M3/L1 ficaram tracked)</td>
+        <td>Decisão de método</td>
+        <td class="center"><span class="badge warn">pendente</span></td>
+      </tr>
+      <tr>
+        <td>Bridge: <code>tail -F</code> → <code>inotifywait</code>
+          (latência ~2min)</td>
+        <td>Latência incomodar de fato</td>
+        <td class="center"><span class="badge warn">pendente</span></td>
+      </tr>
+      <tr>
+        <td>"Modo iterativo": atômico sobrevive ao
+          <code>open-pr.sh</code> pra rodadas de feedback</td>
+        <td>Padrão de iteração UI virar recorrente</td>
+        <td class="center"><span class="badge warn">direção</span></td>
+      </tr>
+      <tr>
+        <td><code>mmb_delete_orphan_task_file</code> →
+          <code>bin/lib/</code></td>
+        <td>4º helper não-config em <code>config.sh</code> OU 2º
+          helper de lifecycle</td>
+        <td class="center"><span class="badge warn">pendente</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top: 32px; color: var(--fg-dim); font-size: 14px;">
+    Tag git: <code>v0.9.0</code> aponta pra
+    <code>dd77380</code> (Merge PR #8). Toda mudança pós-tag está
+    incluída neste entry — próximo entry vira <code>v0.10.0</code>.
+  </p>
+</section>
+
+<footer>
+  Próximos updates seguem ao fim do próximo marco — não por PR
+  individual. Diário lidera por reflexão, não por velocidade.
+</footer>
+
+</main>
+
+</body>
+</html>
