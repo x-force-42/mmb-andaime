@@ -27,6 +27,22 @@
 
 set -uo pipefail
 
+# Guard de contexto (B2 do plano de fortificações, 2026-05-17):
+# Hooks UserPromptSubmit rodam em QUALQUER claude que use esta
+# .claude/settings.local.json — inclusive `claude -p` de workers
+# stateless invocados pelo commd. O invariante:
+#
+#   Hooks destinados ao Master interativo NÃO podem produzir
+#   efeitos colaterais quando rodando em worker stateless.
+#
+# Identidades canônicas (validadas via env):
+#   - Master interativo: MMB_AGENT_ID=master    (setado pelo up.sh)
+#   - Worker stateless:  MMB_AGENT_ID=<dest>-<pid>  (worker.sh:202)
+# Qualquer valor diferente de "master" = worker → sai sem efeito.
+if [ -n "${MMB_AGENT_ID:-}" ] && [ "$MMB_AGENT_ID" != "master" ]; then
+  exit 0
+fi
+
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
 [ -f "$TOOLING_DIR/config.sh" ] && source "$TOOLING_DIR/config.sh" 2>/dev/null || true
 

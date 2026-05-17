@@ -223,6 +223,51 @@ section_robustness() {
   [ "$rc" = "0" ] && pass "exit 0 com arquivo unreadable" || fail "exit=$rc com arquivo unreadable"
 }
 
+# ── 8. Guard de contexto: MMB_AGENT_ID setado = worker stateless ──
+#
+# B2 do plano de fortificações (2026-05-17): hook UserPromptSubmit
+# roda em qualquer claude da config; worker stateless NÃO pode
+# consumir pending-human destinado ao Master interativo.
+
+section_worker_guard() {
+  echo "── guard MMB_AGENT_ID (B2) ──"
+
+  rm -rf "$MMB_STATE_DIR/pending-human"
+  mkdir -p "$MMB_STATE_DIR/pending-human"
+  local entry="$MMB_STATE_DIR/pending-human/2026-05-17T00-00-00Z_test_question_guard.md"
+  cat > "$entry" <<'EOF'
+---
+from: cockpit
+type: question
+subject: guard-test
+---
+
+Pergunta de teste — não deve ser consumida por worker.
+EOF
+
+  [ -f "$entry" ] && pass "pré: entry existe" || fail "pré: entry não criada"
+  [ ! -d "$MMB_STATE_DIR/pending-human/.processed" ] && pass "pré: .processed/ não existe" || fail "pré: .processed/ já existe"
+
+  local out rc
+  set +e
+  out=$(MMB_AGENT_ID="cockpit-12345" MMB_STATE_DIR="$MMB_STATE_DIR" MMB_TMUX_SESSION="" bash "$HOOK" 2>&1)
+  rc=$?
+  set -e
+
+  [ "$rc" = "0" ] && pass "exit 0 com MMB_AGENT_ID=worker" || fail "exit=$rc"
+  [ -z "$out" ] && pass "stdout vazio (pending-human não injetado)" || fail "stdout vazou: [$out]"
+  [ -f "$entry" ] && pass "entry preservada no pending-human/" || fail "entry foi consumida pelo worker"
+  [ ! -d "$MMB_STATE_DIR/pending-human/.processed" ] && pass ".processed/ não foi criado" || fail "hook criou .processed/ rodando como worker"
+
+  # Sanity: Master (sem env) AINDA consome a entry — confirma que
+  # o guard é o único bloqueador.
+  set +e
+  out=$(MMB_STATE_DIR="$MMB_STATE_DIR" MMB_TMUX_SESSION="" bash "$HOOK" 2>&1)
+  set -e
+  echo "$out" | grep -q "pending-human-msgs" && pass "Master (sem env) ainda injeta — guard é o único filtro" || fail "Master também não injeta — guard não está isolado"
+  [ ! -f "$entry" ] && pass "Master consumiu entry (movida pra .processed/)" || fail "Master também não moveu — sintoma diferente"
+}
+
 section_empty; echo
 section_one_entry; echo
 section_moved_to_processed; echo
@@ -230,6 +275,7 @@ section_two_entries_ordered; echo
 section_idempotent; echo
 section_audit_trail; echo
 section_robustness; echo
+section_worker_guard; echo
 
 echo "─────────────────────────────────"
 if [ "$failures" -gt 0 ]; then
