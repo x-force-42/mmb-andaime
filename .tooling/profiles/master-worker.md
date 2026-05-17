@@ -192,11 +192,41 @@ Inclui (não exaustivo):
 
 ## Como escalar (formato de pending-human)
 
+### ⚠ Atomicidade — ESCALA = digest ⚠ + pending-human
+
+**ESCALA é um par atômico de efeitos. Você NÃO pode declarar a
+triagem como "escalated" sem ter produzido AMBOS:**
+
+1. **Append no digest com glyph ⚠** via `append-digest.sh` —
+   registro factual da decisão (barato).
+2. **Chamada a `write-pending-human.sh`** — interrupção real do
+   Mestre (cria o arquivo + renomeia tab tmux pra `master ⚠` com
+   bg vermelha + reseta indicador visual).
+
+**Se você marcou ⚠ no digest mas pulou `write-pending-human.sh`,
+NÃO trate como escalado.** Pending-human vazio + tab tmux não-
+vermelha = Mestre cego = falha de protocolo do worker. Caso real
+registrado: épico `tz-cockpit-dashboard` (2026-05-17), Rotina 1
+detectou `suite_status` ausente, marcou digest com ⚠, mas pulou
+`write-pending-human.sh` — Mestre só descobriu quando Rick cutucou.
+
+Regra dura: **toda Rotina cujo output termine em `→ escalated …`
+DEVE invocar `write-pending-human.sh` antes de você considerar
+o trabalho concluído.** Ordem dos dois efeitos não importa
+(digest primeiro é razoável — é barato e idempotente — mas o
+crítico é a obrigatoriedade conjunta). Se `write-pending-human.sh`
+falhar com exit != 0, **reporte erro via stdout e termine com exit
+!= 0** — não trate a mensagem como rotina; o reprocessamento pelo
+commd vai dar nova chance.
+
+### Mecânica do utilitário
+
 Use o utilitário `.tooling/bin/write-pending-human.sh`. Ele:
 - gera filename com timestamp único
 - preenche frontmatter
 - aceita Resumo/Triagem/Body via stdin ou flags
-- atualiza tmux status-bar
+- atualiza tmux status-bar (rename + bg vermelha — é o sinal
+  visual que o Rick olha pra saber que precisa atenção)
 
 Exemplo de invocação (Claude tool call Bash):
 ```bash

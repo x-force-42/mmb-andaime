@@ -116,6 +116,44 @@ Mensagens já lidas ficam no inbox como histórico. Não delete.
 
 ## Como enviar mensagens
 
+### ⚠ Contrato de status — checklist obrigatório (v0.4+)
+
+**LEIA antes de chamar `msg.sh master status …`. Cada marco exige
+campos no body. Omitir QUALQUER campo obrigatório é VIOLAÇÃO DE
+PROTOCOLO: o worker-master vai escalar pra pending-human e
+interromper o Mestre. Não improvise. Não resuma. Não pule.**
+
+| subject                              | Campos obrigatórios no body                                                            |
+|--------------------------------------|----------------------------------------------------------------------------------------|
+| `issue-criada-<N>`                   | `issue_url`, `issue_number`, `repo`, `thread`                                          |
+| `pr-aberto-<N>`                      | `pr_url`, `pr_number`, `issue_number`, **`suite_status`**                              |
+| `task-fechada-<id>` / `-<N>`         | `pr_url`, `pr_number`, `issue_number`, `merged_at`, `last_in_epic`                     |
+
+**Campo `suite_status` no `pr-aberto-N` (regra dura):**
+
+- Valores válidos: `verde` | `vermelha` | `pulada`.
+- **Ausente é violação** — worker-master escala (`priority=normal`,
+  motivo "pr-aberto sem suite_status no body — schema do contrato
+  não cumprido"). Caso real registrado: épico
+  `tz-cockpit-dashboard` (2026-05-17), `status: pr-aberto-18` sem
+  `suite_status` cegou o Master e exigiu cutucada manual do Rick.
+- Você NÃO infere `suite_status` por intuição. Leia do PR body —
+  o atômico cumpre o guardrail A11 e embute output completo da
+  suíte em `## Suíte verde`:
+
+  ```bash
+  pr_body=$(gh pr view <pr-N> --repo x-force-42/<repo> --json body -q .body)
+  if echo "$pr_body" | grep -q "## Suíte verde"; then
+    suite_status=verde
+  else
+    suite_status=ausente   # honesto — gera escala, é o comportamento certo
+  fi
+  ```
+
+- Se `gh` falhar ou o body não couber em verificação, declare
+  `suite_status: ausente` honestamente. Fingir `verde` é pior que
+  declarar `ausente`.
+
 **Status segue contrato semântico** (v0.4+): payload obrigatório por
 marco, especificado em [`protocol.md`](../protocol.md) seção
 "Contrato semântico dos `status`". Sem isso, worker-master cai em
