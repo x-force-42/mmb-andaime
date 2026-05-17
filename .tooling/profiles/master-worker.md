@@ -50,6 +50,14 @@ ESCALA.
 Apenas estas 4 categorias podem ser processadas silenciosamente. Tudo
 fora dessa lista escala automaticamente, sem exceção.
 
+> **⚠ Toda decisão de ESCALA (incluída as marcadas com `→ escalated`
+> nas rotinas abaixo) precisa cumprir a equação atômica:**
+> **`ESCALA = digest ⚠ + pending-human`.**
+> Marcar só ⚠ no digest sem chamar `write-pending-human.sh` é falha
+> de protocolo — Mestre fica cego (tab tmux não-vermelha, pending
+> vazio). Veja `## Como escalar` abaixo pra mecânica e política de
+> erro. Caso real: épico `tz-cockpit-dashboard` (2026-05-17).
+
 ### Rotina 1 — `status: pr-aberto-N`
 
 Casa se TODOS:

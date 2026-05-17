@@ -313,6 +313,12 @@ Depois fique passivo. O atômico:
 
 ### 4.5. PR aberto (detectado por você)
 
+> **⚠ ANTES DE EMITIR:** releia `## Como enviar mensagens →
+> Contrato de status — checklist obrigatório`. `pr-aberto-N` exige
+> `pr_url`, `pr_number`, `issue_number`, `suite_status` no body.
+> `suite_status` ausente é VIOLAÇÃO — worker-master escala pra
+> pending-human (caso real `tz-cockpit-dashboard` 2026-05-17).
+
 Quando perceber que o atômico abriu PR (`gh pr list`, pane fechou,
 comment na issue), emita `status: pr-aberto-<N>` pro Mestre — siga
 o contrato semântico em [`protocol.md`](../protocol.md):
