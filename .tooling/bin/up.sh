@@ -144,8 +144,16 @@ if [ "$MMB_MODE" != "fast" ] && [ -d "$MMB_ROOT/mmb-logger" ]; then
   # Fase 3+ removeu o comando `watch` (era ingest_once/runner.py legado).
   # Reconcile é one-shot; pra atualizar a DB com o estado atual, rodamos
   # uma reconcile inicial e depois só `serve` em foreground.
+  #
+  # `--reload` é específico do ambiente local do andaime: faz uvicorn
+  # detectar mudanças em *.py e respawnar o subprocess automaticamente.
+  # Evita o ritual de matar/recriar o serve após cada merge de PR no
+  # mmb-logger (visto em PR #14 e PR #17 do logger). CLI default
+  # continua sem reload — não usar em produção real. Cron interno do
+  # reconcile é recriado pelo lifespan do app no respawn, sem
+  # duplicação de task asyncio.
   tmux send-keys -t "$SESSION:logger-api" \
-    "uv run mmb-logger init-db && uv run mmb-logger reconcile && uv run mmb-logger serve" C-m
+    "uv run mmb-logger init-db && uv run mmb-logger reconcile && uv run mmb-logger serve --reload" C-m
 fi
 
 tmux select-window -t "$SESSION:master"
