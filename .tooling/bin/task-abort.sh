@@ -22,6 +22,9 @@ TASK_ID="${2:-}"
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MMB_ROOT="$(dirname "$TOOLING_DIR")"
 
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/config.sh"
+
 if [ -z "$REPO" ] || [ -z "$TASK_ID" ]; then
   echo "Uso: $0 <repo> <task-id>"
   echo
@@ -76,6 +79,10 @@ if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
 fi
 
 git worktree prune
+
+# Limpa o brief de task local se for untracked (artefato runtime).
+# Tracked = preservado (commitado deliberadamente).
+mmb_delete_orphan_task_file "$TASK_FILE" "$REPO"
 
 # Deregistra atômico se houver (v0.1). agent-id = <repo-short>-<task-id>.
 REPO_SHORT="${REPO#mmb-}"

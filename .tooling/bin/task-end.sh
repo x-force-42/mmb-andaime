@@ -86,4 +86,9 @@ if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
 fi
 
 git worktree prune
+
+# Limpa o brief de task local se for untracked (artefato runtime).
+# Tracked = preservado (commitado deliberadamente pelo PR).
+mmb_delete_orphan_task_file "$TASK_FILE" "$REPO"
+
 echo "✓ [$REPO] Cleanup concluído pra task $TASK_ID."

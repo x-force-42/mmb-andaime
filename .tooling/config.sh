@@ -179,6 +179,35 @@ mmb_claude_flags() {
   echo "$flags"
 }
 
+# Remove arquivo de brief de task (`docs/tasks/<id>-<slug>.md`) APENAS
+# se untracked no git. Tracked = commitado deliberadamente pelo PR
+# (faz parte da história), deve ser preservado. Untracked = artefato
+# runtime/scratch criado pelo orq local, pode ser limpo após cleanup
+# de worktree/branch.
+#
+# Compatível com `set -e` (todos os caminhos retornam 0 — ausente,
+# tracked ou deletado).
+#
+# Uso (dentro do repo, após cleanup de worktree/branch):
+#   mmb_delete_orphan_task_file "$TASK_FILE" "$REPO"
+#
+# Args:
+#   $1 = caminho relativo do arquivo (pode ser vazio — no-op)
+#   $2 = nome do repo pra logs (ex: "mmb-cockpit")
+mmb_delete_orphan_task_file() {
+  local task_file="$1"
+  local repo="${2:-?}"
+  [ -n "$task_file" ] || return 0
+  [ -f "$task_file" ] || return 0
+  if git ls-files --error-unmatch "$task_file" >/dev/null 2>&1; then
+    echo "ℹ [$repo] $task_file está tracked — preservado (commitado pelo PR)"
+  else
+    rm "$task_file"
+    echo "✓ [$repo] Arquivo de task untracked removido: $task_file"
+  fi
+  return 0
+}
+
 # Detecta o default branch do repo atual (main ou master).
 # Uso (dentro de um repo):
 #   default_branch=$(mmb_default_branch)
