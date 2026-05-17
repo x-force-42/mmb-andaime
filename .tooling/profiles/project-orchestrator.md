@@ -313,36 +313,40 @@ Depois fique passivo. O atômico:
 
 ### 4.5. PR aberto (detectado por você)
 
-> **⚠ ANTES DE EMITIR:** releia `## Como enviar mensagens →
-> Contrato de status — checklist obrigatório`. `pr-aberto-N` exige
-> `pr_url`, `pr_number`, `issue_number`, `suite_status` no body.
-> `suite_status` ausente é VIOLAÇÃO — worker-master escala pra
-> pending-human (caso real `tz-cockpit-dashboard` 2026-05-17).
-
 Quando perceber que o atômico abriu PR (`gh pr list`, pane fechou,
-comment na issue), emita `status: pr-aberto-<N>` pro Mestre — siga
-o contrato semântico em [`protocol.md`](../protocol.md):
+comment na issue), emita `status: pr-aberto-<N>` pro Mestre **via
+o wrapper obrigatório** `send-status-pr-opened.sh` — substituiu
+chamada manual de `msg.sh` em v0.10+. Wrapper:
+
+- Valida fail-fast: repo curto válido, pr-number positivo,
+  issue-number positivo, thread não-vazia, suite-status no domínio.
+- **Auto-detecta `suite_status`** do PR body real (grep `## Suíte
+  verde` via `gh pr view`). Falha do `gh` cai pra `ausente`
+  honestamente — nunca presume `verde`.
+- Monta o body com todos os campos obrigatórios do schema v0.4+.
+- Chama `msg.sh master status pr-aberto-<N>` com payload completo.
 
 ```bash
-# Levantar veredicto da suíte do PR body (open-pr.sh embute output
-# completo em ## Suíte verde — guardrail A11):
-pr_body=$(gh pr view <pr-N> --repo x-force-42/<repo> --json body -q .body)
-suite=$(echo "$pr_body" | grep -q "## Suíte verde" && echo "verde" || echo "ausente")
-
-msg.sh master status pr-aberto-<pr-N> - <thread> <<EOF
-pr_url: https://github.com/x-force-42/<repo>/pull/<pr-N>
-pr_number: <pr-N>
-issue_number: <issue-N>
-suite_status: $suite
-
-Atômico abriu PR fechando issue #<issue-N>.
-EOF
+/MMB/.tooling/bin/send-status-pr-opened.sh <repo-short> <pr-number> <issue-number> <thread>
+# Ex:
+/MMB/.tooling/bin/send-status-pr-opened.sh cockpit 42 17 cleanup-scripts
 ```
 
-`suite_status` ausente ou diferente de `verde` faz worker-master
-escalar pra pending-human. **Não improvise**: o veredicto vem do PR
-body real, não da sua intuição. Se não conseguir confirmar (rede ou
-gh CLI falhou), declare `suite_status: ausente` honestamente.
+Override opcional (use só se tiver certeza — auto-detect é o padrão):
+```bash
+.../send-status-pr-opened.sh cockpit 42 17 <thread> --suite-status verde
+```
+
+**Por que wrapper obrigatório (B1.1 — v0.10+):** o reforço imperativo
+do PR #7 do andaime no profile (warning ⚠ + tabela + receita
+executável) **foi ignorado em produção 2x** (`tz-cockpit-dashboard`
+2026-05-17 e `cockpit-ux-layout-filtros` 2026-05-17). Exemplo em
+profile longo não é contrato forte. Wrapper transforma contrato em
+chamada de função, com fail-fast no próprio script. Não tem como
+descumprir sem o erro vir explícito.
+
+**Não chame `msg.sh master status pr-aberto-N` direto.** Worker-master
+ainda processa, mas o caminho ortodoxo é o wrapper.
 
 ### 5. Pós-merge
 
