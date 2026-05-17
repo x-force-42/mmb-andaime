@@ -249,6 +249,49 @@ section_unknown_subject() {
 
 # ── Run ───────────────────────────────────────────────────────
 
+section_worker_guard() {
+  echo "── guard MMB_AGENT_ID (B2) ──"
+  reset_sandbox
+
+  # Cria digest com entries que SERIAM injetadas no Master
+  local digest="$MMB_STATE_DIR/digest-2026-05-16.md"
+  echo "# Digest — 2026-05-16" > "$digest"
+  echo "" >> "$digest"
+  add_entry "$digest" "10:00:00" "cockpit" "status" "issue-criada-500" "guard-test" "✓" "ação"
+  add_entry "$digest" "11:00:00" "cockpit" "status" "pr-aberto-501" "guard-test" "✓" "PR aberto"
+
+  # Estado de referência ANTES de rodar com MMB_AGENT_ID setado.
+  [ ! -f "$MMB_STATE_DIR/digest-cursor-master.txt" ] && pass "pré: cursor não existe" || fail "pré: cursor já existe"
+  local digest_md5_before
+  digest_md5_before=$(md5sum "$digest" | awk '{print $1}')
+
+  # Rodar como worker (MMB_AGENT_ID setado conforme worker.sh:202).
+  local out rc
+  set +e
+  out=$(MMB_AGENT_ID="cockpit-12345" MMB_STATE_DIR="$MMB_STATE_DIR" bash "$HOOK" 2>&1)
+  rc=$?
+  set -e
+
+  # (a) Hook saiu sem efeito.
+  [ "$rc" = "0" ] && pass "exit 0 com MMB_AGENT_ID=worker" || fail "exit=$rc"
+  [ -z "$out" ] && pass "stdout vazio (sem <mestre-digest> injetado)" || fail "stdout vazou: [$out]"
+
+  # (b) Cursor não foi criado/atualizado.
+  [ ! -f "$MMB_STATE_DIR/digest-cursor-master.txt" ] && pass "cursor inalterado (não criado)" || fail "cursor foi criado/tocado pelo worker"
+
+  # (c) Digest inalterado (md5).
+  local digest_md5_after
+  digest_md5_after=$(md5sum "$digest" | awk '{print $1}')
+  [ "$digest_md5_before" = "$digest_md5_after" ] && pass "digest md5 inalterado" || fail "digest foi modificado"
+
+  # (d) Sanity check: Master (sem env) AINDA vê as 2 entries — confirma
+  # que o guard é o único filtro, não a ausência das entries.
+  set +e
+  out=$(MMB_STATE_DIR="$MMB_STATE_DIR" bash "$HOOK" 2>&1)
+  set -e
+  echo "$out" | grep -q 'novos="2"' && pass "Master (sem env) ainda vê as 2 entries — guard é o único filtro" || fail "Master também não vê — guard não está isolado"
+}
+
 section_empty
 section_three_new
 section_no_repeat
@@ -257,6 +300,7 @@ section_escalated_not_in
 section_cursor_reset
 section_multiday
 section_unknown_subject
+section_worker_guard
 
 echo ""
 if [ "$failures" -eq 0 ]; then
