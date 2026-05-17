@@ -91,4 +91,8 @@ git worktree prune
 # Tracked = preservado (commitado deliberadamente pelo PR).
 mmb_delete_orphan_task_file "$TASK_FILE" "$REPO"
 
+# Deregistra atômico + remove heartbeat órfão (helper em config.sh).
+REPO_SHORT="${REPO#mmb-}"
+mmb_remove_orphan_heartbeat "${REPO_SHORT}-${TASK_ID}" "merged"
+
 echo "✓ [$REPO] Cleanup concluído pra task $TASK_ID."
