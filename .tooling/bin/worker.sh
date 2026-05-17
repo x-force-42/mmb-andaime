@@ -90,10 +90,27 @@ LOG="$LOG_DIR/${DEST}.log"
 # ─── Heartbeat (B1.2 — andaime-fortification-v08) ────────────────
 # Sub-processo de fundo atualiza mtime de state/heartbeat-<dest>.txt
 # enquanto claude estiver produzindo output (log com mtime recente).
-# Se claude pendurar (sem output novo por > 60s), heartbeat congela —
-# commd watchdog detecta staleness > 90s e mata o worker, liberando
+# Se claude pendurar (sem output novo por > MMB_HEARTBEAT_LOG_WINDOW
+# segundos), heartbeat congela — commd watchdog detecta staleness >
+# MMB_WATCHDOG_STALE_SECONDS (default 90s) e mata o worker, liberando
 # o flock do dest. Sem isso, um worker travado segura todas as
 # próximas mensagens daquele dest até o timeout duro (600s) expirar.
+#
+# Janela de log de 120s (Fix 2b do #4 — 2026-05-16): claude -p tem
+# latência de finalização *pós-output* (cleanup interno, fim de
+# stream) que pode passar de 60s em workers stateless. Com janela
+# de 60s, o heartbeat congelava após o último token e o watchdog
+# matava antes do processo retornar limpo — gerando eventos
+# `kind=worker-watchdog-kill` no journal mesmo com trabalho útil
+# já concluído. Janela de 120s cobre essa latência sem mascarar
+# travamento real (watchdog ainda dispara aos 90s sobre o heartbeat).
+#
+# DÉBITO/HARDENING FUTURO (2c, não implementado): detectar
+# claude vivo via `kill -0 $CLAUDE_PID` em vez de log mtime —
+# distingue "vivo silencioso" de "travado de verdade". Requer
+# expor PID do claude -p de dentro do subshell + timeout que
+# envelopa a invocação (linha ~204). Não trivial, valor médio.
+: "${MMB_HEARTBEAT_LOG_WINDOW:=120}"
 HEARTBEAT_FILE="$TOOLING_DIR/state/heartbeat-${DEST}.txt"
 mkdir -p "$TOOLING_DIR/state"
 : > "$HEARTBEAT_FILE"
@@ -102,12 +119,12 @@ heartbeat_tick() {
   while sleep 15; do
     # Parent worker.sh já saiu? Encerre.
     kill -0 $$ 2>/dev/null || exit 0
-    # Log produzindo output nos últimos 60s? Refresh heartbeat.
+    # Log produzindo output dentro da janela? Refresh heartbeat.
     if [ -f "$LOG" ]; then
       local now log_mod
       now=$(date +%s)
       log_mod=$(stat -c %Y "$LOG" 2>/dev/null || echo 0)
-      if [ "$((now - log_mod))" -lt 60 ]; then
+      if [ "$((now - log_mod))" -lt "$MMB_HEARTBEAT_LOG_WINDOW" ]; then
         touch "$HEARTBEAT_FILE"
       fi
     fi

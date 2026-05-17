@@ -27,13 +27,27 @@ TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
 
-STATE_DIR="$TOOLING_DIR/state"
-LOG_DIR="$TOOLING_DIR/logs"
-INBOX_BASE="$TOOLING_DIR/inbox"
-PID_FILE="$STATE_DIR/commd.pid"
-COMMD_LOG="$LOG_DIR/commd.log"
-JOURNAL_LOG="$LOG_DIR/journal.jsonl"
-JOURNAL_LOCK="$LOG_DIR/.journal.lock"
+# Paths globais. Em modo teste (_MMB_TEST_MODE=1), preserve qualquer
+# valor já setado pelo caller — permite sandbox hermético sem tocar
+# state/logs/inbox/journal reais. Em modo produção, sempre re-deriva
+# de TOOLING_DIR (defensivo contra env leaks).
+if [ "${_MMB_TEST_MODE:-0}" = "1" ]; then
+  STATE_DIR="${STATE_DIR:-$TOOLING_DIR/state}"
+  LOG_DIR="${LOG_DIR:-$TOOLING_DIR/logs}"
+  INBOX_BASE="${INBOX_BASE:-$TOOLING_DIR/inbox}"
+  PID_FILE="${PID_FILE:-$STATE_DIR/commd.pid}"
+  COMMD_LOG="${COMMD_LOG:-$LOG_DIR/commd.log}"
+  JOURNAL_LOG="${JOURNAL_LOG:-$LOG_DIR/journal.jsonl}"
+  JOURNAL_LOCK="${JOURNAL_LOCK:-$LOG_DIR/.journal.lock}"
+else
+  STATE_DIR="$TOOLING_DIR/state"
+  LOG_DIR="$TOOLING_DIR/logs"
+  INBOX_BASE="$TOOLING_DIR/inbox"
+  PID_FILE="$STATE_DIR/commd.pid"
+  COMMD_LOG="$LOG_DIR/commd.log"
+  JOURNAL_LOG="$LOG_DIR/journal.jsonl"
+  JOURNAL_LOCK="$LOG_DIR/.journal.lock"
+fi
 
 mkdir -p "$STATE_DIR" "$LOG_DIR/workers"
 [ -f "$JOURNAL_LOG" ] || : > "$JOURNAL_LOG"
@@ -288,7 +302,12 @@ watchdog_check() {
     hb_age=$((now - hb_mod))
     if [ "$hb_age" -gt "$MMB_WATCHDOG_STALE_SECONDS" ]; then
       log "watchdog: dest=$d heartbeat stale (${hb_age}s > ${MMB_WATCHDOG_STALE_SECONDS}s) — killing worker"
-      pkill -TERM -f "worker\.sh ${d} " 2>/dev/null || true
+      # Em modo teste, NÃO chama pkill — workers reais não devem ser
+      # atingidos por uma execução de teste. O evento e o cleanup
+      # ainda são emitidos, suficientes pra verificação.
+      if [ "${_MMB_TEST_MODE:-0}" != "1" ]; then
+        pkill -TERM -f "worker\.sh ${d} " 2>/dev/null || true
+      fi
       # Evento sev:error com id correlacionável. epic="" pois watchdog não
       # conhece a thread aqui (mensagem em .processing/ pode ter ido); o
       # commd-worker-exit subsequente carrega o epic real.
