@@ -84,11 +84,8 @@ git worktree prune
 # Tracked = preservado (commitado deliberadamente).
 mmb_delete_orphan_task_file "$TASK_FILE" "$REPO"
 
-# Deregistra atômico se houver (v0.1). agent-id = <repo-short>-<task-id>.
+# Deregistra atômico + remove heartbeat órfão (helper em config.sh).
 REPO_SHORT="${REPO#mmb-}"
-AGENT_ID="${REPO_SHORT}-${TASK_ID}"
-if [ -f "$TOOLING_DIR/state/heartbeats/$AGENT_ID.alive" ]; then
-  "$TOOLING_DIR/bin/agents.sh" deregister "$AGENT_ID" "aborted" || true
-fi
+mmb_remove_orphan_heartbeat "${REPO_SHORT}-${TASK_ID}" "aborted"
 
 echo "✓ [$REPO] Aborto concluído pra task $TASK_ID."

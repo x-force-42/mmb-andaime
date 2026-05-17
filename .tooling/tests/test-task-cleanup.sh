@@ -151,6 +151,59 @@ section_set_e_compatible() {
   [ "$rc" = "0" ] && pass "ausente + set -e: caller sobrevive" || fail "set -e derrubou: rc=$rc"
 }
 
+# ── Heartbeat órfão — helper mmb_remove_orphan_heartbeat ──────
+
+section_heartbeat_orphan_removed() {
+  echo "── heartbeat órfão → deletado ──"
+  local sandbox="$SANDBOX/orphan-hb"
+  rm -rf "$sandbox"
+  mkdir -p "$sandbox/state/heartbeats" "$sandbox/bin"
+
+  # Stub do agents.sh — apenas registra invocação, não falha
+  cat > "$sandbox/bin/agents.sh" <<'STUB_EOF'
+#!/usr/bin/env bash
+# stub: aceita "deregister <id> <reason>", retorna 0
+exit 0
+STUB_EOF
+  chmod +x "$sandbox/bin/agents.sh"
+
+  local hb="$sandbox/state/heartbeats/cockpit-X1.alive"
+  touch "$hb"
+  [ -f "$hb" ] && pass "pré: heartbeat existe" || fail "pré: heartbeat não criado"
+
+  local out
+  out=$(TOOLING_DIR="$sandbox" mmb_remove_orphan_heartbeat "cockpit-X1" "merged" 2>&1)
+
+  [ ! -f "$hb" ] && pass "heartbeat removido" || fail "heartbeat persistiu"
+  echo "$out" | grep -q "Heartbeat órfão removido" && pass "log de remoção" || fail "log faltou: [$out]"
+}
+
+section_heartbeat_absent_noop() {
+  echo "── heartbeat ausente → no-op ──"
+  local sandbox="$SANDBOX/no-hb"
+  rm -rf "$sandbox"
+  mkdir -p "$sandbox/state/heartbeats"
+
+  local out rc
+  set +e
+  out=$(TOOLING_DIR="$sandbox" mmb_remove_orphan_heartbeat "fake-Z9" "cleanup" 2>&1)
+  rc=$?
+  set -e
+
+  [ "$rc" = "0" ] && pass "exit 0 com heartbeat ausente" || fail "exit=$rc"
+  [ -z "$out" ] && pass "stdout vazio (sem ação)" || fail "stdout: [$out]"
+}
+
+section_heartbeat_empty_agent_id() {
+  echo "── heartbeat: arg vazio → no-op ──"
+  local rc
+  set +e
+  TOOLING_DIR="/tmp" mmb_remove_orphan_heartbeat "" "merged" >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" = "0" ] && pass "exit 0 com agent-id vazio" || fail "exit=$rc"
+}
+
 # ── Run ─────────────────────────────────────────────────────────
 
 section_untracked_deleted
@@ -158,6 +211,9 @@ section_tracked_preserved
 section_absent_noop
 section_empty_arg
 section_set_e_compatible
+section_heartbeat_orphan_removed
+section_heartbeat_absent_noop
+section_heartbeat_empty_agent_id
 
 echo ""
 if [ "$failures" -eq 0 ]; then

@@ -208,6 +208,43 @@ mmb_delete_orphan_task_file() {
   return 0
 }
 
+# Remove o heartbeat file de um agente que terminou ciclo de vida
+# (merge ou abort). Sem isso, `state/heartbeats/<agent-id>.alive`
+# persiste e a aquario-bridge segue publicando `state/atomic-<id>`
+# pra atômicos já mortos — ruído visual no aquário e na bridge.
+#
+# Também tenta `agents.sh deregister` (best-effort) pra registrar
+# evento no agents.jsonl. Falha silenciosa pra deregister; remoção
+# do arquivo é o cleanup operacional crítico.
+#
+# Compatível com `set -e` (todos os caminhos retornam 0).
+#
+# Uso:
+#   mmb_remove_orphan_heartbeat <agent-id> <reason>
+#
+# Args:
+#   $1 = agent-id (ex: "cockpit-M4", "logger-L1")
+#   $2 = motivo pro deregister ("merged" | "aborted" | "...")
+mmb_remove_orphan_heartbeat() {
+  local agent_id="$1"
+  local reason="${2:-cleanup}"
+  [ -n "$agent_id" ] || return 0
+
+  # TOOLING_DIR vem do caller (sourced no init).
+  local hb="${TOOLING_DIR:-}/state/heartbeats/${agent_id}.alive"
+  [ -f "$hb" ] || return 0
+
+  # Deregister é best-effort — agents.sh pode falhar (lock, etc),
+  # não bloqueia o cleanup do arquivo.
+  if [ -x "${TOOLING_DIR}/bin/agents.sh" ]; then
+    "${TOOLING_DIR}/bin/agents.sh" deregister "$agent_id" "$reason" 2>/dev/null || true
+  fi
+
+  rm -f "$hb"
+  echo "✓ Heartbeat órfão removido: ${agent_id}.alive"
+  return 0
+}
+
 # Detecta o default branch do repo atual (main ou master).
 # Uso (dentro de um repo):
 #   default_branch=$(mmb_default_branch)
