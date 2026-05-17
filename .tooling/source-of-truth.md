@@ -518,6 +518,55 @@ warning ruidoso, não silêncio.
 Lista é fechada. Convenção nova só entra aqui via mudança versionada
 deste doc.
 
+## Convenção de fuso (v0.9.0+)
+
+### Storage permanece UTC
+
+Todos os timestamps em colunas do DB são **UTC** (ISO 8601 com `Z`,
+ex: `2026-05-16T18:39:12Z`). Nenhuma coluna é local. Persistência,
+comparações, ordering, `WHERE ts >= cutoff` — tudo UTC. Reconciler
+escreve UTC, API devolve UTC nos campos de timestamp.
+
+### Bucketing diário de métricas usa BRT
+
+A view `/api/metricas/overview` agrega séries diárias (`custo_por_dia`,
+`ciclos_por_dia`) por **dia operacional local do MMB, atualmente
+BRT (UTC-3)**, derivado em runtime via SQLite modifier
+`datetime(planner_invoked_at, '-3 hours')`. Implementado em
+`mmb-logger/src/mmb_logger/db.py::metrics_overview`.
+
+Motivo: eventos rodados entre 21:00–23:59 BRT caem no dia UTC
+seguinte. Sem o modifier, o Dashboard do cockpit contabilizava
+ciclos no dia errado pro operador. O fix preserva storage UTC mas
+projeta dia operacional local na agregação reportada.
+
+Detalhes do contrato:
+- Campo `dia` da resposta: `str` no formato `"YYYY-MM-DD"`.
+- Semântica de `dia`: dia BRT. Frontend assume local (`formatLocalDate`).
+- Storage não muda: `ciclos.planner_invoked_at` continua UTC ISO 8601.
+
+### Esta convenção NÃO generaliza
+
+Vale **apenas** pro bucketing diário em `/api/metricas/overview`.
+Não vale automaticamente pra:
+- Outros endpoints que vierem a agregar por dia (decidir explicitamente).
+- Campos individuais de timestamp na API (`started_at`, `closed_at`,
+  `planner_invoked_at`, etc) — esses continuam UTC literais.
+- Filtros baseados em data (ex: "últimos N dias") — `cutoff_iso` é UTC.
+
+Sem decisão explícita em outro contexto, default é UTC (estado nativo
+do storage).
+
+### Hardcode `-3 hours` é decisão MVP
+
+Brasil aboliu horário de verão em 2019; offset estável. Promover pra
+configuração explícita (`MMB_LOGGER_TZ_OFFSET` env var) se:
+- Brasil voltar a usar DST, **ou**
+- operação ficar multi-timezone (usuários fora do fuso BRT).
+
+Até lá, hardcode é aceitável e auditado por teste de borda em
+`mmb-logger/tests/test_metrics_bucketing.py`.
+
 ## `--reset` é destrutivo (atenção)
 
 `mmb-logger reconcile --reset` apaga as tabelas `ciclos` e `epicos`
