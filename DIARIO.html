@@ -217,6 +217,16 @@
 
   <h2>Entries</h2>
   <ul>
+    <li><a href="#v0-10-0">v0.10.0 — B1 fechado + ciclo iterativo</a>
+      <ul>
+        <li><a href="#v0-10-0-saldo" class="sub">Saldo</a></li>
+        <li><a href="#v0-10-0-mudancas" class="sub">O que mudou</a></li>
+        <li><a href="#v0-10-0-aprendizado" class="sub">O que aprendemos</a></li>
+        <li><a href="#v0-10-0-validacao" class="sub">Validação em produção</a></li>
+        <li><a href="#v0-10-0-bugs-novos" class="sub">Bugs novos</a></li>
+        <li><a href="#v0-10-0-debitos" class="sub">Débitos abertos</a></li>
+      </ul>
+    </li>
     <li><a href="#v0-9-0">v0.9.0 — Andaime endurecido</a>
       <ul>
         <li><a href="#v0-9-0-saldo" class="sub">Saldo</a></li>
@@ -291,6 +301,333 @@
     <li><strong>Não:</strong> diário de conversa, atualização contínua
       por commit, registro de cada bug. Para isso, há outras peças.</li>
   </ul>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+
+<section class="entry" id="v0-10-0">
+  <h2>v0.10.0 — B1 fechado em produção + ciclo iterativo validado</h2>
+  <div class="meta">
+    <span class="tag">v0.10.0</span> 2026-05-18 ·
+    pós-tag <code>v0.9.0</code> · sessão contínua 2026-05-17 → 2026-05-18
+  </div>
+
+  <p>
+    Janela curta (~12h) que validou em produção real as fortificações
+    da <code>v0.9.0</code>, descobriu a causa raiz do bug recorrente
+    B1 (que sobreviveu a 3 tentativas anteriores de fix), entregou
+    3 épicos de produto pelo método andaime, e ergueu um diário
+    humano-legível (este próprio doc) como peça canônica do método.
+  </p>
+
+  <h3 id="v0-10-0-saldo">Saldo</h3>
+  <div class="saldo">
+    <strong>6 PRs</strong> no <code>mmb-andaime</code> +
+    <strong>1 PR</strong> no <code>mmb-logger</code><br>
+    <strong>3 épicos de produto entregues</strong>
+    (<code>ux-toggle-e-role-meeseeks</code>,
+    <code>epico-idle-badge</code>; primeiro completou também o
+    <code>cockpit-ux-layout-filtros</code> pendente da janela
+    anterior)<br>
+    <strong>Suíte tooling</strong>: 252 → 292 verdes (+40 testes
+    novos)<br>
+    <strong>Suíte mmb-logger</strong>: 167 → 172 verdes<br>
+    <strong>B1 fechado oficialmente</strong> em produção real após
+    3 implementações erradas e 1 correta<br>
+    <strong>DIARIO.html</strong> introduzido como peça canônica
+  </div>
+
+  <h3 id="v0-10-0-mudancas">O que mudou de fato</h3>
+
+  <p><strong>Diário institucional (este doc):</strong></p>
+  <ul>
+    <li>
+      <code>DIARIO.html</code> criado na raiz (PR andaime#10).
+      Sidebar TOC sticky, dark/light, navegável. Diferente de
+      <code>journal.jsonl</code> (eventos máquina) e dos
+      <code>designs/*</code> (técnico por versão). Aqui mora o
+      saldo reflexivo por marco — produto da observação de que
+      <code>.md</code> técnico não atende leitura humana fluente.
+    </li>
+  </ul>
+
+  <p><strong>Esteira corretiva pós-tag:</strong></p>
+  <ul>
+    <li>
+      Wrapper obrigatório <code>send-status-pr-opened.sh</code>
+      (PR andaime#11 — <strong>B1.1</strong>). Auto-detect de
+      <code>suite_status</code> via <code>gh pr view</code>;
+      <code>ausente</code> honestamente se gh falha.
+    </li>
+    <li>
+      Cleanup automático de heartbeats órfãos em
+      <code>task-end</code>/<code>task-abort</code>
+      (PR andaime#12). Helper
+      <code>mmb_remove_orphan_heartbeat</code> em
+      <code>config.sh</code>.
+    </li>
+    <li>
+      <code>up.sh</code> sobe <code>logger-api</code> com
+      <code>--reload</code> pra dev local (PR andaime#13).
+      CLI já tinha a flag; faltava só usar.
+    </li>
+    <li>
+      Documentação do <code>--reload</code> em
+      <code>mmb-logger/CLAUDE.md</code> (PR logger#18).
+    </li>
+    <li>
+      <strong>B1.2:</strong> <code>open-pr.sh</code> agora chama
+      <code>send-status-pr-opened.sh</code> ao invés de
+      <code>msg.sh</code> direto (PR andaime#14). <em>Esta foi
+      a causa raiz real do B1.</em>
+    </li>
+  </ul>
+
+  <p><strong>Épicos de produto entregues nesta janela:</strong></p>
+  <ul>
+    <li>
+      <code>cockpit-ux-layout-filtros</code> — scroll local +
+      sidebar retrátil + filtro de tags incluindo épicos
+      (cockpit#20 + logger#17).
+    </li>
+    <li>
+      <code>ux-toggle-e-role-meeseeks</code> — toggle reposicionado
+      no Header + planners amarelos no aquário via módulo
+      <code>agent-role.ts</code> agnóstico (cockpit#22 + aquarium#17).
+    </li>
+    <li>
+      <code>epico-idle-badge</code> — badge distingue 3 estados
+      (aberto/idle/fechado) derivado client-side (cockpit#24).
+      Foi a frente de validação real de B1.2.
+    </li>
+  </ul>
+
+  <h3 id="v0-10-0-aprendizado">O que aprendemos</h3>
+
+  <div class="insight">
+    <strong>Quando bug recorrente parece ignorar o profile, primeiro
+    suspect não é "claude do worker está ignorando texto" — é
+    caminho de código alternativo invisível.</strong>
+    B1 foi tratado 3 vezes errado:
+    <ul style="margin: 6px 0;">
+      <li>PR andaime#7 reforçou o profile com warning ⚠ + tabela +
+        receita executável + caso real.</li>
+      <li>PR andaime#11 criou wrapper obrigatório.</li>
+      <li>Reincidiu nos 2 workers do próximo épico.</li>
+    </ul>
+    A diagnose só veio na 3ª reincidência: o status
+    <code>pr-aberto-N</code> é emitido por <code>open-pr.sh</code>
+    do atômico (bash hardcoded antes do schema v0.4+), <strong>não
+    pelo orq local</strong>. Toda a esteira anterior tratou o sintoma
+    errado. Lição transferível: bug recorrente "ignora profile" =
+    procurar o caminho que <em>não passa</em> pelo profile.
+  </div>
+
+  <div class="insight">
+    <strong>Critério acionável pré-registrado fecha o ciclo sem
+    debate.</strong> O PR andaime#7 (reforço do profile) já
+    deixava escrito: <em>"se B1 falhar de novo, promover pra
+    wrapper obrigatório"</em>. Quando reincidiu, não houve
+    discussão sobre "será que vale wrapper?" — o gatilho estava
+    documentado. Padrão a replicar: anotar critério de escalação
+    no próprio PR que o introduz.
+  </div>
+
+  <div class="insight">
+    <strong>Validação em produção real é diferente de suíte
+    verde.</strong> B1.1 (PR #11) passou 22/22 testes mas
+    <em>não tinha chamador real</em> até B1.2 (PR #14) conectar
+    o <code>open-pr.sh</code>. Testes de unidade do wrapper
+    nunca detectariam isso — o gap morava em quem chama, não no
+    chamado. Reforça a importância de smoke real (próximo merge
+    pelo método) como critério complementar a "suite verde".
+  </div>
+
+  <div class="insight">
+    <strong>O método foi capaz de validar fortificações próprias
+    sem cutucada do Rick.</strong> No épico
+    <code>cockpit-ux-layout-filtros</code> os 2 workers escalaram
+    pr-aberto sem suite_status: digest ⚠ + pending-human + tab
+    tmux vermelha juntos, exatamente como B3 prevê. No épico
+    <code>epico-idle-badge</code> (pós-B1.2) o digest mostrou
+    rotina silenciosa ✓ com suite_status: verde — primeira vez em
+    4 oportunidades que o ciclo passa limpo. O comparativo nos
+    entries do digest do dia tornou a conclusão indiscutível.
+  </div>
+
+  <h3 id="v0-10-0-validacao">Validação em produção real</h3>
+
+  <table>
+    <thead>
+      <tr><th>Fortificação</th><th>Como foi exercitada</th><th>Resultado</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>B1.2</strong> — <code>open-pr.sh</code> via wrapper</td>
+        <td>PR #24 do cockpit (epico-idle-badge) — primeiro
+          <code>pr-aberto-N</code> pós-fix. Digest mostrou ✓ com
+          <code>suite_status: verde</code> auto-detectado;
+          pending-human vazio; tab tmux sem alerta.</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>Heartbeat cleanup</strong> em task-end</td>
+        <td>3 cleanups (M5 cockpit, A1 aquarium, M6 cockpit) — zero
+          heartbeat órfão pós-task-end, apenas <code>master.alive</code></td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>docs/tasks cleanup</strong> em task-end</td>
+        <td>3 arquivos órfãos removidos automaticamente
+          (M5/A1/M6) pelo task-end (PR #8 da v0.9.0 sendo
+          exercitado em fluxo real)</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>Bucketing BRT</strong> em <code>/api/metricas/overview</code></td>
+        <td>Dia 17/5 mostra 6 ciclos no contador local
+          (BRT) — sem deslocamento UTC</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>Filtro tags</strong> com union ciclos+épicos</td>
+        <td>Retorna 4 tags (v0.5.0, v0.7.0, v0.8.0, v0.9.0) em
+          vez de 2</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>Closure via ✅</strong> automática</td>
+        <td>5 épicos fechados consistentemente nesta janela
+          (todos via reconcile lendo o marcador)</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+      <tr>
+        <td><strong>--reload</strong> no serve local</td>
+        <td>Estrutura supervisor + worker confirmada via
+          <code>/proc</code> (PID 169768 supervisor +
+          169770 fork)</td>
+        <td class="center"><span class="badge warn">parcial</span></td>
+      </tr>
+      <tr>
+        <td><strong>B1</strong> (esteira 3-passos) — fechado</td>
+        <td>Após PR #7 e #11 sem efeito, PR #14 fixou o bug
+          de fato. 4ª oportunidade passou limpa.</td>
+        <td class="center"><span class="badge ok">✓</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top: 12px; color: var(--fg-dim); font-size: 14px;">
+    <strong>Parcial em <code>--reload</code>:</strong> serve atual
+    roda com <code>--reload</code> ativo, mas porque foi reiniciado
+    manualmente. O fluxo "fechar e abrir sessão tmux" que faria o
+    <code>up.sh</code> executar a linha nova não foi exercitado.
+    Será validado naturalmente no próximo cold-start.
+  </p>
+
+  <h3 id="v0-10-0-bugs-novos">Bugs novos descobertos nesta janela</h3>
+
+  <ul>
+    <li>
+      <strong>B1 reincidente em 100% dos workers</strong>
+      (cockpit + logger no épico <code>ux-toggle-e-role-meeseeks</code>).
+      Levou ao diagnóstico real (B1.2). Já fechado.
+    </li>
+    <li>
+      <strong>Bridge <code>tail -F</code> latência ~2min</strong>
+      capturada visualmente: born do segundo worker apareceu no
+      aquário 2min após o primeiro, causando percepção de "só um
+      worker acionado". Migração pra <code>inotifywait</code>
+      registrada como débito.
+    </li>
+    <li>
+      <strong>3 commds simultâneos</strong> observados brevemente
+      durante uma rodada — zombies se autodestruíram antes de
+      intervir. Não-crítico mas registrado como sinal de observação.
+    </li>
+    <li>
+      <strong>Gap arquitetural: iterar PR antes do merge</strong>
+      — confirmado pela conversa sobre refinar ícone do menu. O
+      caminho hoje é mini-épico pós-merge OU edição manual fora do
+      método. Registrado como direção futura ("modo iterativo").
+    </li>
+  </ul>
+
+  <h3 id="v0-10-0-debitos">Débitos abertos com gatilhos</h3>
+
+  <table>
+    <thead>
+      <tr><th>Débito</th><th>Gatilho</th><th>Estado</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Validação visual</strong> dos 3 episódios UI
+          (toggle reposicionado, planners amarelos, badge idle)</td>
+        <td>Rick abrir o app e confirmar — só olho humano detecta</td>
+        <td class="center"><span class="badge warn">pendente</span></td>
+      </tr>
+      <tr>
+        <td><strong>--reload via up.sh real</strong> (fluxo de
+          cold-start, não restart manual)</td>
+        <td>Próximo cold-start da sessão tmux do MMB</td>
+        <td class="center"><span class="badge warn">pendente</span></td>
+      </tr>
+      <tr>
+        <td><strong>Branch órfã</strong>
+          <code>task/1.2-dark-mode</code> no aquarium remoto</td>
+        <td>Decisão explícita de cleanup</td>
+        <td class="center"><span class="badge warn">débito antigo</span></td>
+      </tr>
+      <tr>
+        <td><strong>Bridge tail-F → inotifywait</strong></td>
+        <td>Latência incomodar de fato (hoje 2min ainda é aceitável)</td>
+        <td class="center"><span class="badge warn">médio prazo</span></td>
+      </tr>
+      <tr>
+        <td><strong>Política de commit</strong> de
+          <code>docs/tasks/*.md</code> por atômicos (M3/L1 ficaram
+          tracked, outros não)</td>
+        <td>Decisão de método</td>
+        <td class="center"><span class="badge warn">pendente</span></td>
+      </tr>
+      <tr>
+        <td><strong>Modo iterativo</strong> — atômico sobrevive ao
+          <code>open-pr.sh</code> pra rodadas de feedback no mesmo PR</td>
+        <td>Iteração UI virar padrão recorrente</td>
+        <td class="center"><span class="badge warn">direção</span></td>
+      </tr>
+      <tr>
+        <td><strong>Spike</strong> Master → Planner → Atomic</td>
+        <td>Atomic decidir errado / Master gargalo autoral</td>
+        <td class="center"><span class="badge warn">adiado</span></td>
+      </tr>
+      <tr>
+        <td><strong>Aquarium <code>block_added</code></strong> por commit</td>
+        <td>Demanda concreta + decisão arquitetural X1/X2/X3</td>
+        <td class="center"><span class="badge warn">adiado</span></td>
+      </tr>
+      <tr>
+        <td><strong>Doc panorama HTML</strong> (manual de bordo
+          gerado por sessão entrevistadora)</td>
+        <td>Disparado pelo Rick em outra sessão; prompt já produzido</td>
+        <td class="center"><span class="badge warn">próximo</span></td>
+      </tr>
+      <tr>
+        <td><strong>Deprecar <code>msg.sh master status pr-aberto-N</code></strong>
+          direto (sem wrapper)</td>
+        <td>Agora sem chamador legítimo — pode virar guardrail
+          bloqueante</td>
+        <td class="center"><span class="badge warn">futuro</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top: 32px; color: var(--fg-dim); font-size: 14px;">
+    Tag git: <code>v0.10.0</code> ainda não foi criada — esta entry
+    documenta a janela de evolução pós-<code>v0.9.0</code> que será
+    selada quando o Rick rodar <code>git tag -a v0.10.0</code>.
+    Próximo entry vira <code>v0.11.0</code>.
+  </p>
 </section>
 
 <!-- ──────────────────────────────────────────────────────────── -->
