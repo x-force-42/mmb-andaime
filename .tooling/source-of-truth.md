@@ -291,13 +291,26 @@ Regra de transição (idempotente):
 | ✅ presente | `fechado` + `closed_at NOT NULL` | no-op (preserva `closed_at` original) |
 | ✅ ausente | `fechado` | UPDATE `status='aberto', closed_at=NULL` (**reabre** — projeção segue fonte canônica) |
 | ✅ ausente | `aberto` | no-op |
-| Briefing ausente | qualquer | tratado como `✅ ausente` |
+| Briefing ausente em `intents/` | qualquer | fallback no archive (ver abaixo) |
 
 `closed_at` = momento da **primeira observação** do ✅ pelo reconciler
 (`datetime.now(UTC).isoformat()`). Não tenta parsear timestamp do
 briefing (sem schema confiável) nem usa `mtime` (instável a edits
 pós-fechamento). Reabertura sob remoção do ✅ é deliberada — estado
 derivado acompanha a fonte canônica.
+
+**Fallback no archive como fonte secundária (v0.11.0+):** quando
+briefing não está em `intents/`, reconciler procura em
+`.tooling/archive/*/intents/<date>-<slug>/master-briefing.md` (mais
+recente por mtime se houver mais de um). Existe pra cobrir o caso
+pós-`mmb-reset.sh`, em que briefings de épicos já fechados foram
+arquivados — sem esse fallback, todos regridiriam pra `aberto` no
+próximo reconcile. Se achar com ✅, fecha com `closed_at = mtime do
+arquivo arquivado` (aproximação assumida, sem fidelidade absoluta
+ao instante de fechamento original). Se não achar em nenhum lugar
+ou achar sem ✅, segue a linha `✅ ausente` da tabela. Archive é
+fonte só de fechamento ritual; não é fonte de campos humanos nem
+de outros derivados.
 
 Campos humanos (`assertiveness_score`, `review_note`) e demais campos
 derivados (`intencao`, `andaime_version`) **não são tocados** por essa
