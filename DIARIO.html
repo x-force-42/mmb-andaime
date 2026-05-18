@@ -217,6 +217,16 @@
 
   <h2>Entries</h2>
   <ul>
+    <li><a href="#v0-11-0">v0.11.0 — Captura de modelo por ciclo</a>
+      <ul>
+        <li><a href="#v0-11-0-saldo" class="sub">Saldo</a></li>
+        <li><a href="#v0-11-0-mudancas" class="sub">O que mudou</a></li>
+        <li><a href="#v0-11-0-aprendizado" class="sub">O que aprendemos</a></li>
+        <li><a href="#v0-11-0-validacao" class="sub">Validação em produção</a></li>
+        <li><a href="#v0-11-0-bugs-novos" class="sub">Bugs novos</a></li>
+        <li><a href="#v0-11-0-debitos" class="sub">Débitos abertos</a></li>
+      </ul>
+    </li>
     <li><a href="#v0-10-0">v0.10.0 — B1 fechado + ciclo iterativo</a>
       <ul>
         <li><a href="#v0-10-0-saldo" class="sub">Saldo</a></li>
@@ -301,6 +311,235 @@
     <li><strong>Não:</strong> diário de conversa, atualização contínua
       por commit, registro de cada bug. Para isso, há outras peças.</li>
   </ul>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+
+<section class="entry" id="v0-11-0">
+  <h2>v0.11.0 — Captura de modelo Claude por ciclo</h2>
+  <div class="meta">
+    <span class="tag">v0.11.0</span> 2026-05-18 ·
+    pós-tag <code>v0.10.0</code> · sessão 2026-05-18
+  </div>
+
+  <p>
+    Épico curto e linear (<code>logger-model-tracking</code>): fechar
+    o circuito de <strong>observabilidade do modelo Claude usado em
+    cada ciclo</strong>. Antes desta janela, <code>cost_usd</code> e
+    contagens de tokens eram persistidos no <code>mmb-logger</code>
+    sem o eixo principal de variação — opus vs sonnet vs haiku é
+    ordem de grandeza em $/token, e a info estava sendo descartada
+    após o spawn de cada agente. Três tarefas serializadas
+    (andaime → schema/ingestion → backfill) cobriram o gap e
+    desbloqueiam o experimento futuro de modelo menor em atômicos.
+  </p>
+
+  <h3 id="v0-11-0-saldo">Saldo</h3>
+  <div class="saldo">
+    <strong>1 commit</strong> no <code>mmb-andaime</code> +
+    <strong>2 PRs</strong> no <code>mmb-logger</code> (#20 schema/ingestion/API, #22 backfill)<br>
+    <strong>1 épico entregue</strong> (<code>logger-model-tracking</code>,
+    fechado <code>last_in_epic:true</code>)<br>
+    <strong>19 ciclos retroagidos</strong> com <code>claude-opus-4-7</code>
+    via <code>backfill-model</code> + <strong>1 warning estruturado</strong>
+    no journal (ciclo bootstrap pré-janela <code>MMB_MODE</code>)<br>
+    <strong>~1h21min</strong> do dispatch ao
+    <code>task-fechada-L4</code> · <strong>0 retries</strong>,
+    <strong>0 questions/errors</strong> do orq do logger
+  </div>
+
+  <h3 id="v0-11-0-mudancas">O que mudou de fato</h3>
+
+  <p><strong>T1 — andaime (commit <code>fad54fb</code>):</strong></p>
+  <ul>
+    <li>
+      <code>agents.sh register</code> aceita 6º argumento opcional
+      <code>[model]</code>; <code>_build_json</code> já tolerava
+      kv extra, então compat retroativa é total.
+    </li>
+    <li>
+      <code>up.sh</code>, <code>spawn-atomic.sh</code> e
+      <code>worker.sh</code> passam <code>MMB_MODEL_*</code> resolvido
+      por camada nos eventos <code>spawn</code> de
+      <code>state/agents.jsonl</code>.
+    </li>
+    <li>
+      Workers stateless ganharam <code>register</code>/<code>deregister</code>
+      em par via trap <code>EXIT</code>; id <code>&lt;dest&gt;-w-&lt;pid&gt;</code>
+      evita colisão com o master interativo e entre invocações.
+    </li>
+  </ul>
+
+  <p><strong>T2 — mmb-logger (PR #20):</strong></p>
+  <ul>
+    <li>
+      <code>ALTER TABLE ciclos ADD COLUMN model TEXT</code>, migration
+      idempotente via <code>init-db</code>.
+    </li>
+    <li>
+      Ingestion lê <code>model</code> dos spawn events do planner
+      do projeto e popula <code>ciclos.model</code>; tolerante a
+      ausência (NULL silencioso) pra eventos legacy.
+    </li>
+    <li>
+      API expõe <code>model</code> no payload dos ciclos. 17 testes
+      novos em <code>test_reconcile_model.py</code>.
+    </li>
+  </ul>
+
+  <p><strong>T3 — mmb-logger (PR #22):</strong></p>
+  <ul>
+    <li>
+      Sub-pacote <code>backfill/</code> + CLI <code>mmb-logger
+      backfill-model [--dry-run]</code>. One-shot idempotente que
+      lê <code>git log -- .tooling/config.sh</code> no andaime,
+      monta janelas temporais por default de <code>MMB_MODE</code>,
+      e mapeia ciclos pré-T1 pro modelo do planner default daquela
+      janela.
+    </li>
+    <li>
+      Ciclos sem janela válida ficam <code>NULL</code> com warning
+      estruturado <code>backfill-model-ambiguous</code> no journal
+      (deduplicado por <code>cycle_id</code> em re-runs).
+    </li>
+    <li>
+      Domínio respeitado: <code>UPDATE</code> só toca <code>model</code>;
+      <code>assertiveness_score</code>/<code>review_note</code> (campos
+      humanos) intocados por construção. 14 testes novos em
+      <code>test_backfill_model.py</code>.
+    </li>
+  </ul>
+
+  <h3 id="v0-11-0-aprendizado">O que aprendemos</h3>
+  <ul>
+    <li>
+      <strong>Mestre edita andaime sob aviso explícito funciona.</strong>
+      T1 não tinha orq (andaime não é repo de produto), então o
+      Mestre executou diretamente — Constraint #2 do
+      <code>master.md</code> permite com "aviso explícito", e o
+      briefing mestre fez esse papel. Sem cerimônia extra de orq
+      fantasma.
+    </li>
+    <li>
+      <strong>Post-merge é manual no modelo stateless.</strong> Orq
+      stateless não detecta merge externo: a sessão acordou via
+      <code>commd</code> só quando o Mestre disparou briefing curto
+      de continuação ("PR mergeado, faça task-end + materialize
+      próxima"). Esse padrão repetiu duas vezes no épico (após PR
+      #20 e após PR #22). Não virou frente de automação ainda —
+      manual é barato e raro o suficiente.
+    </li>
+    <li>
+      <strong>Dry-run real bateu com run real.</strong> 19 candidatos
+      backfilled como <code>claude-opus-4-7</code>, 1 ambíguo, em
+      ambas as execuções. Idempotência forte (filtro WHERE
+      <code>model IS NULL</code> no <code>UPDATE</code> + dedup via
+      leitura do journal) deu segurança operacional pra rodar em
+      produção sem cerimônia.
+    </li>
+  </ul>
+
+  <h3 id="v0-11-0-validacao">Validação em produção</h3>
+  <ul>
+    <li>
+      <strong>Captura ao vivo:</strong> spawn events de
+      <code>agents.jsonl</code> pós-T1 incluem o campo
+      <code>model</code> em todos os agentes (master, atômicos,
+      workers stateless). Verificado em <code>logger-L3</code> e
+      <code>logger-L4</code>, ambos com <code>claude-opus-4-7</code>.
+    </li>
+    <li>
+      <strong>Backfill em produção:</strong> 19/20 candidatos
+      retroagidos. O 1 ciclo bootstrap
+      <code>cleanup-task-scripts__core__2026-05-14T20:19:30Z</code>
+      ficou <code>NULL</code> com warning estruturado
+      (<code>reason: no-window-match</code>) — anterior ao primeiro
+      commit que introduziu <code>MMB_MODE</code> em
+      <code>config.sh</code>.
+    </li>
+    <li>
+      <strong>API:</strong> endpoint <code>/api/epicos/&lt;id&gt;</code>
+      voltou a 200 após <code>init-db</code> aplicar a migration
+      no DB local (o <code>--reload</code> do uvicorn retomou
+      sozinho).
+    </li>
+  </ul>
+
+  <h3 id="v0-11-0-bugs-novos">Bugs novos</h3>
+  <p>
+    Nenhum bug novo. O <code>review-cycle.sh</code> capturou 1
+    evento não-resolvido (<code>commd-worker-exit</code> às
+    13:04:58Z, watchdog matou worker logger por
+    <code>stale_seconds=121</code>), mas o trabalho útil já tinha
+    sido entregue por worker concorrente (issue #19 criada às
+    13:06). Padrão já documentado em <code>worker.sh</code>
+    ("claude -p tem latência de finalização pós-output que pode
+    passar de 60s"). <strong>Resolvido por nota</strong> via
+    <code>log.sh warn watchdog-kill-borderline --resolves
+    20260518T130458Z-logger-worker-watchdog-kill-19779</code>
+    (evento <code>e-2026-05-18-001</code>). Sem nova frente de
+    hardening — débito 2c em <code>worker.sh</code>
+    (<code>kill -0 $CLAUDE_PID</code> no lugar de log mtime)
+    continua aberto, sem evidência de impacto novo.
+  </p>
+
+  <h3 id="v0-11-0-debitos">Débitos abertos</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Débito</th>
+        <th>Gatilho pra atacar</th>
+        <th class="center">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <strong>Experimento "modelo menor em atômicos"</strong>
+          (<code>MMB_MODE=balanced</code> ou override pontual
+          <code>MMB_MODEL_ATOMIC=claude-sonnet-4-6</code>)
+        </td>
+        <td>
+          Infra de captura por camada agora pronta — falta só a
+          decisão operacional. Comparar <code>cost_usd</code> ×
+          <code>model</code> agregados pelo logger após N épicos
+          em modo experimental
+        </td>
+        <td class="center"><span class="badge warn">pendente</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Watchdog hardening 2c</strong>: detectar claude
+          vivo via <code>kill -0 $CLAUDE_PID</code> em vez de log
+          mtime
+        </td>
+        <td>
+          Já documentado em <code>worker.sh</code>; reabrir se
+          eventos <code>worker-watchdog-kill</code> virarem
+          recorrentes pós-trabalho-útil
+        </td>
+        <td class="center"><span class="badge warn">adiado</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Higiene de branches remotas</strong> foi feita
+          manualmente após o épico
+        </td>
+        <td>
+          Futuro possível: automatizar limpeza de branches
+          <code>task/*</code> já mergeadas, se o padrão se repetir
+        </td>
+        <td class="center"><span class="badge warn">futuro</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top: 32px; color: var(--fg-dim); font-size: 14px;">
+    Tag git: <code>v0.11.0</code> ainda não foi criada — esta entry
+    documenta a janela pós-<code>v0.10.0</code> coberta pelo épico
+    <code>logger-model-tracking</code>. Selada quando o Rick rodar
+    <code>git tag -a v0.11.0</code>.
+  </p>
 </section>
 
 <!-- ──────────────────────────────────────────────────────────── -->
@@ -623,10 +862,10 @@
   </table>
 
   <p style="margin-top: 32px; color: var(--fg-dim); font-size: 14px;">
-    Tag git: <code>v0.10.0</code> ainda não foi criada — esta entry
-    documenta a janela de evolução pós-<code>v0.9.0</code> que será
-    selada quando o Rick rodar <code>git tag -a v0.10.0</code>.
-    Próximo entry vira <code>v0.11.0</code>.
+    Tag git: <code>v0.10.0</code> aponta pra <code>9c6c4d5</code>
+    (Merge PR #15). Selada em 2026-05-18 após o épico
+    <code>logger-model-tracking</code> revalidar o método e abrir o
+    próximo entry (<code>v0.11.0</code>).
   </p>
 </section>
 
