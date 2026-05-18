@@ -72,7 +72,7 @@ MASTER_FLAGS=$(mmb_claude_flags master)
 tmux new-session -d -s "$SESSION" -n master -c "$MMB_ROOT"
 
 # Registra o orq mestre no agent registry (v0.1)
-"$TOOLING_DIR/bin/agents.sh" register master master "$SESSION:0.0" >/dev/null 2>&1 || true
+"$TOOLING_DIR/bin/agents.sh" register master master "$SESSION:0.0" "" "" "$MMB_MODEL_MASTER" >/dev/null 2>&1 || true
 
 # MMB_TAB no env da tab master + prompt inicial
 tmux send-keys -t "$SESSION:master" \

@@ -9,7 +9,7 @@
 # inbox/ e do journal futuro. À prova de race via flock.
 #
 # Uso:
-#   agents.sh register   <id> <parent> <pane> [task] [epic]
+#   agents.sh register   <id> <parent> <pane> [task] [epic] [model]
 #   agents.sh deregister <id> <reason>
 #   agents.sh heartbeat  <id>
 #   agents.sh list       [--all]              # default: vivos; --all: tudo
@@ -122,18 +122,18 @@ _now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # ── Comandos ──────────────────────────────────────────────────────
 
 cmd_register() {
-  local id="${1:-}" parent="${2:-}" pane="${3:-}" task="${4:-}" epic="${5:-}"
+  local id="${1:-}" parent="${2:-}" pane="${3:-}" task="${4:-}" epic="${5:-}" model="${6:-}"
   if [ -z "$id" ] || [ -z "$parent" ] || [ -z "$pane" ]; then
-    echo "Uso: agents.sh register <id> <parent> <pane> [task] [epic]" >&2
+    echo "Uso: agents.sh register <id> <parent> <pane> [task] [epic] [model]" >&2
     exit 2
   fi
   local pid="${MMB_AGENT_PID:-$$}"
   local json
   json=$(_build_json "$(_now_iso)" "spawn" "$id" \
-    "parent=$parent" "pane=$pane" "pid=$pid" "task=$task" "epic=$epic")
+    "parent=$parent" "pane=$pane" "pid=$pid" "task=$task" "epic=$epic" "model=$model")
   _append_event "$json"
   : > "$HEARTBEATS_DIR/$id.alive"
-  echo "✓ registered: $id (parent=$parent pane=$pane)"
+  echo "✓ registered: $id (parent=$parent pane=$pane${model:+ model=$model})"
 }
 
 cmd_deregister() {

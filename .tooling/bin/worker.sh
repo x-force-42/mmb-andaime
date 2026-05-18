@@ -138,7 +138,29 @@ cleanup_heartbeat() {
   kill "$HEARTBEAT_PID" 2>/dev/null || true
   rm -f "$HEARTBEAT_FILE"
 }
-trap cleanup_heartbeat EXIT
+
+# ─── Agent registry pro worker stateless (logger-model-tracking) ──
+# Workers stateless ficam registrados durante a invocação pra que
+# o mmb-logger possa capturar o `model` resolvido do agente naquele
+# ciclo. ID inclui PID pra evitar colisão com o orq vivo (master
+# interativo registrado por up.sh) e entre invocações concorrentes
+# de destinos diferentes. spawn + deregister em pares; consumidor
+# (mmb-logger) trata como evento efêmero.
+WORKER_AGENT_ID="${DEST}-w-$$"
+case "$LAYER" in
+  master)  MODEL_ID="$MMB_MODEL_MASTER" ;;
+  project) MODEL_ID="$MMB_MODEL_PROJECT_ORCHESTRATOR" ;;
+  *)       MODEL_ID="" ;;
+esac
+"$TOOLING_DIR/bin/agents.sh" register \
+  "$WORKER_AGENT_ID" commd commd "" "" "$MODEL_ID" >/dev/null 2>&1 || true
+
+cleanup_worker() {
+  cleanup_heartbeat
+  "$TOOLING_DIR/bin/agents.sh" deregister \
+    "$WORKER_AGENT_ID" worker-end >/dev/null 2>&1 || true
+}
+trap cleanup_worker EXIT
 
 # Flags do claude conforme camada
 CLAUDE_FLAGS=$(mmb_claude_flags "$LAYER")

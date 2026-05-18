@@ -151,7 +151,7 @@ if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; th
       -F '#{pane_id}' | head -1)
     _send_atomic_init "$MMB_TMUX_SESSION:atomic-$TASK_ID" "${FALLBACK_PANE:-}"
     "$TOOLING_DIR/bin/agents.sh" register \
-      "$AGENT_ID" "$PARENT_AGENT" "$MMB_TMUX_SESSION:atomic-$TASK_ID" "$TASK_ID"
+      "$AGENT_ID" "$PARENT_AGENT" "$MMB_TMUX_SESSION:atomic-$TASK_ID" "$TASK_ID" "$EPIC_SLUG" "$MMB_MODEL_ATOMIC"
     echo "✓ Atômico spawnado em nova window 'atomic-$TASK_ID' (id: $AGENT_ID)"
     exit 0
   fi
@@ -175,7 +175,7 @@ if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; th
   _send_atomic_init "$MMB_TMUX_SESSION:$WINDOW_ID" "${NEW_PANE:-}"
 
   "$TOOLING_DIR/bin/agents.sh" register \
-    "$AGENT_ID" "$PARENT_AGENT" "${NEW_PANE:-$MMB_TMUX_SESSION:$WINDOW_ID}" "$TASK_ID"
+    "$AGENT_ID" "$PARENT_AGENT" "${NEW_PANE:-$MMB_TMUX_SESSION:$WINDOW_ID}" "$TASK_ID" "$EPIC_SLUG" "$MMB_MODEL_ATOMIC"
 
   echo "✓ Atômico spawnado como split na window '$short' (tab $WINDOW_ID, pane $NEW_PANE, id: $AGENT_ID)"
   echo "  Issue: #$ISSUE  Worktree: $WORKTREE"
