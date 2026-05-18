@@ -174,16 +174,25 @@ PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$' || true)
 # Usa --allow-offline porque open-pr.sh roda no pane do atômico e o commd
 # pode não estar visível neste contexto; a mensagem fica pendente e é
 # drenada quando o daemon subir.
+#
+# B1.2 (v0.10+): chamada via wrapper `send-status-pr-opened.sh` em vez
+# de `msg.sh` direto. Wrapper monta body com schema v0.4+ obrigatório
+# (pr_url, pr_number, issue_number, suite_status) e auto-detecta
+# suite_status via `gh pr view`. Antes, open-pr.sh emitia status com
+# corpo "PR aberto: <URL>" sem schema, causando escala do worker-master
+# (B1 reincidente — falsos positivos em pending-human).
 if [ -n "$PR_NUMBER" ] && [ -n "${MMB_GH_OWNER:-}" ]; then
   THREAD="${EPIC_SLUG:-${MMB_AGENT_ID:-}}"
   if [ -n "$THREAD" ]; then
-    printf "PR aberto: %s\n" "$PR_URL" \
-      | MMB_TAB="${MMB_TAB:-atomic}" MMB_ALLOW_OFFLINE_ENQUEUE=1 \
-        "$TOOLING_DIR/bin/msg.sh" \
-          master status "pr-aberto-${PR_NUMBER}" - "$THREAD" \
-          2>/dev/null \
-      && echo "✓ Status pr-aberto-${PR_NUMBER} enviado ao master" \
-      || echo "  (msg.sh falhou; logger não vai registrar pr_aberto)"
+    # Deriva repo-short do GH_REPO ("x-force-42/mmb-cockpit" → "cockpit").
+    REPO_FULL="${GH_REPO##*/}"
+    REPO_SHORT="${REPO_FULL#mmb-}"
+
+    MMB_TAB="${MMB_TAB:-atomic}" MMB_ALLOW_OFFLINE_ENQUEUE=1 \
+      "$TOOLING_DIR/bin/send-status-pr-opened.sh" \
+        "$REPO_SHORT" "$PR_NUMBER" "$SUBISSUE" "$THREAD" 2>/dev/null \
+      && echo "✓ Status pr-aberto-${PR_NUMBER} enviado ao master (via wrapper)" \
+      || echo "  (send-status-pr-opened.sh falhou; logger não vai registrar pr_aberto)"
   fi
 fi
 
