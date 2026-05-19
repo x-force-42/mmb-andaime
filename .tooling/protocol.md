@@ -207,6 +207,13 @@ FIPA-ACL assim:
 
 ## Polling-on-every-turn é a garantia de entrega (v0.1+)
 
+> **v0.3+:** vale para o **Master interativo** (sessão viva) e
+> para atômicos enquanto rodam. **Workers stateless (master-worker
+> e project-orchestrator) NÃO fazem polling** — são invocados pelo
+> `commd` com o caminho da mensagem como parâmetro do `worker.sh`,
+> processam aquela mensagem e morrem. O texto abaixo descreve o
+> contrato original (v0.1) que ainda vale para sessões vivas.
+
 **Ping é otimização de latência, não fonte da verdade.**
 Toda sessão Claude (master, orq, atômico) **lê o próprio inbox
 no início de cada turn**, independente de ter recebido ping
@@ -226,6 +233,14 @@ Profiles instruem cada papel a fazer esse polling. Guardrails
 M5/L8/A6 proíbem pular.
 
 ## O ping
+
+> **v0.3+:** o `tmux send-keys` direto deixou de ser o mecanismo
+> primário de wakeup. Hoje o `commd.sh` faz `inotifywait` em todos
+> os `inbox/<dest>/` e dispara `worker.sh` quando arquivo novo
+> aparece (workers stateless) ou faz `tmux send-keys` pra tab
+> `master` (Master interativo, que continua sessão viva). A seção
+> abaixo descreve o ping textual ASCII — relevante hoje só para a
+> tab `master` (e para entender o formato em logs históricos).
 
 `msg.sh` grava o arquivo no inbox do destinatário e envia 2-3
 linhas via `tmux send-keys` pra tab dele:
@@ -253,8 +268,9 @@ seguida de `inbox: <path>`, leia o arquivo e aja conforme o
 - Escrita atômica do arquivo, **serializada por `flock(1)`**
   (v0.1+) — múltiplos remetentes concorrentes ao mesmo inbox
   não corrompem nada.
-- Envio do ping pra tab correta (window 0, sempre — orq local
-  mora ali; atômicos vivem em panes >0 e não recebem mensagens).
+- Envio do ping pra tab correta (v0.1–v0.2; em v0.3+ aplicável
+  só à tab `master` interativa — workers stateless são acordados
+  pelo `commd` via `inotifywait`, não por send-keys).
 
 Uso:
 ```bash
