@@ -26,6 +26,14 @@ TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MMB_ROOT="$(dirname "$TOOLING_DIR")"
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/lib/targets.sh"
+
+# Eager load: surface registry inválido antes de qualquer dispatch.
+mmb_targets_load || {
+  echo "ERRO: registry de targets inválido (ver stderr acima). Abortando." >&2
+  exit 2
+}
 
 DEST="${1:-}"
 INBOX_FILE="${2:-}"
@@ -35,17 +43,15 @@ if [ -z "$DEST" ] || [ -z "$INBOX_FILE" ]; then
   exit 1
 fi
 
-case "$DEST" in
-  master|cockpit|aquarium|logger) ;;
-  *) echo "ERRO: dest inválido: $DEST" >&2; exit 2;;
-esac
-
 if [ ! -f "$INBOX_FILE" ]; then
   echo "ERRO: inbox-file não existe: $INBOX_FILE" >&2
   exit 2
 fi
 
-# CWD e profile por papel
+# CWD e profile por papel.
+# `master` é role (não target) e fica hardcoded. Targets de projeto vêm
+# do registry declarativo em .tooling/targets.json — adicionar novo target
+# = editar o JSON apenas. PR 1B: worker.sh é o primeiro consumidor.
 case "$DEST" in
   master)
     CWD="$MMB_ROOT"
@@ -55,20 +61,14 @@ case "$DEST" in
     PROFILE="$TOOLING_DIR/profiles/master-worker.md"
     LAYER="master"
     ;;
-  cockpit)
-    CWD="$MMB_ROOT/mmb-cockpit"
-    PROFILE="$TOOLING_DIR/profiles/project-orchestrator.md"
-    LAYER="project"
-    ;;
-  aquarium)
-    CWD="$MMB_ROOT/mmb-aquarium"
-    PROFILE="$TOOLING_DIR/profiles/project-orchestrator.md"
-    LAYER="project"
-    ;;
-  logger)
-    CWD="$MMB_ROOT/mmb-logger"
-    PROFILE="$TOOLING_DIR/profiles/project-orchestrator.md"
-    LAYER="project"
+  *)
+    if ! mmb_target_exists "$DEST"; then
+      echo "ERRO: dest inválido: $DEST (não é 'master' nem aparece em targets.json)" >&2
+      exit 2
+    fi
+    CWD=$(mmb_target_path "$DEST")
+    PROFILE="$TOOLING_DIR/profiles/$(mmb_target_field "$DEST" worker_profile)"
+    LAYER=$(mmb_target_field "$DEST" agent_layer)
     ;;
 esac
 
