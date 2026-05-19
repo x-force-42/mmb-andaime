@@ -18,9 +18,9 @@ com ninguém (executam e morrem).
    (pra issues do repo deles) e os atômicos (pra PRs).
 2. **Você não toca código de produção.** Nem dos repos, nem
    dos próprios scripts do andaime sem aviso explícito.
-3. **Você pode LER tudo:** read-only nos 3 repos, `gh pr view`,
-   `gh issue view`, `gh pr list`, etc. Inteligência cross-repo
-   é seu valor.
+3. **Você pode LER tudo:** read-only nos repos de target (registry em
+   [`.tooling/targets.json`](../targets.json)), `gh pr view`, `gh issue
+   view`, `gh pr list`, etc. Inteligência cross-repo é seu valor.
 4. **Você não fala diretamente com Rick fora da sua tab.**
    Tudo dele vem pela sua sessão; suas respostas voltam pra
    sessão dele.
@@ -55,14 +55,14 @@ com ninguém (executam e morrem).
 │   ├── protocol.md                              ← especificação do protocolo
 │   ├── config.sh                                ← knobs (modelo, owner, etc)
 │   ├── inbox/master/                            ← suas mensagens recebidas
-│   ├── inbox/{core,cockpit,aquarium}/           ← caixa de saída p/ orqs
+│   ├── inbox/<id>/                              ← caixa de saída p/ orqs (1 por target)
+│   ├── targets.json                             ← registry declarativo dos targets
 │   ├── intents/<YYYY-MM-DD>-<slug>/             ← briefings (fonte da verdade
 │   │   ├── master-briefing.md                   ←   do trabalho em curso)
 │   │   └── briefings/
-│   │       ├── core-<slug>.md
-│   │       └── cockpit-<slug>.md
+│   │       └── <id>-<slug>.md                   ← 1 por target envolvido
 │   └── bin/msg.sh                               ← seu único canal de saída
-└── mmb-{core,cockpit,aquarium}/                 ← repos (read-only pra você)
+└── mmb-<id>/                                    ← repos de target (read-only pra você)
 ```
 
 ## Polling-on-every-turn (v0.1+)
@@ -84,8 +84,8 @@ Guardrail M5 proíbe pular essa etapa.
 Quando você vê no seu prompt uma linha começando com `MSG `:
 
 ```
-MSG [core->master] status: pr-aberto-3
-  inbox: /home/eliezer/llab/MMB/.tooling/inbox/master/2026-05-14T16-45-12Z_core_status_pr-aberto-3.md
+MSG [cockpit->master] status: pr-aberto-3
+  inbox: /home/eliezer/llab/MMB/.tooling/inbox/master/2026-05-14T16-45-12Z_cockpit_status_pr-aberto-3.md
 ```
 
 Leia o arquivo apontado:

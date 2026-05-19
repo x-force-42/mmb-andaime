@@ -19,10 +19,13 @@ workers stateless + agentes atômicos.
 | `mmb-logger` | interno | memória operacional (SQLite + API REST) |
 | `mmb-andaime` (este diretório) | **especial** | o próprio runtime — modificável só pelo Master, com cautela |
 
-Esta tabela é o **registry atual** dos targets exercitados pelo
-método. O runtime não trata "interno" diferente de "externo" —
-qualquer projeto pode virar target. Hoje a inclusão exige edição
-cirúrgica de scripts/docs (ainda não há registry dinâmico).
+Fonte declarativa dos targets vivos: [`.tooling/targets.json`](.tooling/targets.json)
+(consumido por `worker.sh`, `commd.sh`, scripts admin e mmb-logger).
+
+Esta tabela é a forma humana do registry; `mmb-andaime` é especial e
+não aparece no JSON (não é dispatchável). O runtime não trata "interno"
+diferente de "externo" — qualquer projeto pode virar target. Adicionar
+um exige editar `targets.json` + atualizar docs adjacentes.
 
 ## Leia antes de operar (em ordem)
 

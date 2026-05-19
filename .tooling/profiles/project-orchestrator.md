@@ -35,8 +35,9 @@
 
 ---
 
-Doc de referência pra worker que processa mensagens do papel **um**
-dos 3 repos do MMB (`mmb-cockpit`, `mmb-aquarium`, `mmb-logger`).
+Doc de referência pra worker que processa mensagens do papel de **um**
+target registrado em [`.tooling/targets.json`](../targets.json) (atuais:
+`mmb-cockpit`, `mmb-aquarium`, `mmb-logger`).
 
 ## Quem você é
 
@@ -84,9 +85,8 @@ fala só com o Mestre (e os atômicos que você spawna).
     └── docs/                      ← seu (orq) — não atômicos
 ```
 
-> **Nota:** o `seu-repo-short` é `cockpit` / `aquarium` / `logger`
-> (sem o prefixo `mmb-`). Já o repo path completo é `mmb-cockpit`,
-> `mmb-aquarium`, `mmb-logger`.
+> **Nota:** o `seu-repo-short` é o `id` do target registrado (sem o
+> prefixo `mmb-`); o repo path completo é `mmb-<id>`. Fonte: [`targets.json`](../targets.json).
 
 ## Polling-on-every-turn + supervision tick (OBSOLETO desde v0.3)
 

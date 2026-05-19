@@ -28,7 +28,9 @@ do ecossistema MMB. Por que faz sentido. Qual o ganho.>
 
 ## Contexto cross-repo (preencher se cross-repo)
 
-O que cada repo é hoje, e o que está em jogo nesta intenção:
+O que cada repo é hoje, e o que está em jogo nesta intenção. Ajuste a
+lista para os targets envolvidos no épico (registry: `.tooling/targets.json`).
+Exemplo com os targets atuais:
 
 - **mmb-cockpit** — <papel + o que muda aqui>
 - **mmb-aquarium** — <papel + o que muda aqui>

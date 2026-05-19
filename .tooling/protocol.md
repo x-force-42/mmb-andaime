@@ -56,6 +56,10 @@ ao abrir PR.
 
 ## Estrutura física
 
+Um diretório `inbox/<dest>/` por destination ativo. `master` é role
+especial; o restante deriva dos targets em [`.tooling/targets.json`](targets.json).
+Exemplo do estado atual:
+
 ```
 .tooling/inbox/
 ├── master/       ← mensagens recebidas pelo Mestre
@@ -78,10 +82,13 @@ Exemplos:
 
 ## Schema de mensagem
 
+`from`/`to` são destinations: `master` (role especial) ou `<id>` de
+target registrado em [`targets.json`](targets.json).
+
 ```markdown
 ---
-from: <master|cockpit|aquarium|logger>
-to: <master|cockpit|aquarium|logger>
+from: <master | id de target registrado>
+to: <master | id de target registrado>
 type: <briefing|question|answer|status|error>
 subject: <kebab-case-curto>
 thread: <épico-slug ou conversation-id>   # opcional
@@ -126,7 +133,7 @@ sub-issue do épico.
 |---|---|---|
 | `issue_url` | URL absoluta `https://github.com/<owner>/<repo>/issues/<N>` | sim |
 | `issue_number` | N (mesmo do subject) | sim |
-| `repo` | `mmb-cockpit` \| `mmb-aquarium` \| `mmb-logger` | sim |
+| `repo` | `mmb-<id de target registrado>` (fonte: [`targets.json`](targets.json)) | sim |
 | `thread` | slug do épico (mesmo do frontmatter) | sim |
 
 Exemplo de body:
