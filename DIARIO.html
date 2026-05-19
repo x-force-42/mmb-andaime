@@ -217,6 +217,13 @@
 
   <h2>Entries</h2>
   <ul>
+    <li><a href="#v0-13-0">v0.13.0 — Target Registry Rollout (Fase 1)</a>
+      <ul>
+        <li><a href="#v0-13-0-saldo" class="sub">Saldo</a></li>
+        <li><a href="#v0-13-0-mudancas" class="sub">O que mudou</a></li>
+        <li><a href="#v0-13-0-debitos" class="sub">Débitos abertos</a></li>
+      </ul>
+    </li>
     <li><a href="#v0-12-0">v0.12.0 — Alinhamento conceitual pós-mmb-core</a>
       <ul>
         <li><a href="#v0-12-0-saldo" class="sub">Saldo</a></li>
@@ -319,6 +326,170 @@
     <li><strong>Não:</strong> diário de conversa, atualização contínua
       por commit, registro de cada bug. Para isso, há outras peças.</li>
   </ul>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+
+<section class="entry" id="v0-13-0">
+  <h2>v0.13.0 — Target Registry Rollout (Fase 1)</h2>
+  <div class="meta">
+    <span class="tag">v0.13.0</span> 2026-05-19 ·
+    pós-tag <code>v0.12.0</code> · sessão 2026-05-19
+  </div>
+
+  <p>
+    Fecha o que <code>v0.12.0</code> deixou como horizonte: o registry
+    dinâmico de targets. <code>.tooling/targets.json</code> passa a ser
+    a fonte declarativa dos targets vivos; shell runtime, scripts admin,
+    <code>mmb-logger</code>, smoke sandbox e docs autoritativas consomem
+    o registry. Sem mudança de comportamento operacional —
+    <code>cockpit</code>/<code>aquarium</code>/<code>logger</code>
+    continuam idênticos. O ganho é estrutural: incluir novo target deixa
+    de exigir edição cirúrgica em ~6 pontos.
+  </p>
+
+  <h3 id="v0-13-0-saldo">Saldo</h3>
+  <div class="saldo">
+    <strong>6 commits</strong> no <code>mmb-andaime</code> (PRs 1A–1F) +
+    <strong>1 commit</strong> no <code>mmb-logger</code> (PR 1E)<br>
+    Fase técnica entregue como cadeia incremental de PRs pequenas, cada
+    uma com smoke verde e revert seguro<br>
+    Testes verdes: <code>test-targets-registry.sh</code> 21/21 ·
+    <code>smoke hardening</code> 40 PASS (1 FAIL pré-existente em M7) ·
+    <code>pytest -q</code> no logger (209/209) · <code>ruff</code> clean
+  </div>
+
+  <h3 id="v0-13-0-mudancas">O que mudou de fato</h3>
+  <ul>
+    <li>
+      <code>.tooling/targets.json</code> + adaptador Bash
+      (<code>.tooling/lib/targets.sh</code>) + adaptador Python
+      (<code>mmb_logger/targets.py</code>, stdlib only). Schema v1
+      com 7 campos por entry; validador com 21 assertivas em 6 grupos.
+    </li>
+    <li>
+      Shell runtime consome o registry: <code>worker.sh</code>,
+      <code>commd.sh</code>, <code>reset-all.sh</code>,
+      <code>create-task-issue.sh</code>,
+      <code>send-status-pr-opened.sh</code>,
+      <code>write-pending-human.sh</code>,
+      <code>spawn-atomic.sh</code>.
+    </li>
+    <li>
+      <code>mmb-logger</code> consome via helper Python:
+      <code>reconcile/gh.py</code>, <code>reconcile/inbox.py</code>,
+      <code>reconcile/planner_models.py</code>,
+      <code>reconcile/audit.py</code>, <code>ingest/agents_stream.py</code>,
+      <code>ingest/inbox.py</code>.
+    </li>
+    <li>
+      Smoke sandbox (<code>smoke.sh::_setup_sandbox</code>) alinhado:
+      copia a lib, gera <code>targets.json</code> sandbox-only,
+      adiciona stub <code>mmb-logger</code> + <code>inbox/logger/</code>.
+    </li>
+    <li>
+      Docs autoritativas apontam o registry: <code>protocol.md</code>
+      (schema enum + frontmatter), <code>source-of-truth.md</code>
+      (project_short, briefing.to, "issues + PRs dos 3 repos"),
+      <code>profiles/master.md</code>, <code>profiles/master-worker.md</code>,
+      <code>profiles/project-orchestrator.md</code>,
+      <code>templates/master-briefing.md</code>, <code>CLAUDE.md</code>
+      raiz. <strong>+40/-28 linhas</strong> no total — sem reescrita
+      estética, sem engordar profiles.
+    </li>
+    <li>
+      <code>core</code> saiu das listas vivas de dispatch (shell +
+      worker + logger ativo). Preservado intencionalmente como:
+      (a) alias histórico documentado no logger Python
+      (<code>historical_dest_ids()</code>) para parsing retrospectivo
+      de mensagens/eventos pré-2026-05; (b) fixture sintética no smoke,
+      marcada explicitamente como sandbox-only.
+    </li>
+  </ul>
+
+  <h3 id="v0-13-0-debitos">Débitos abertos</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Débito</th>
+        <th>Gatilho pra atacar</th>
+        <th class="center">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <strong>M7 smoke flake</strong>
+          (<code>commd-poll-recovered em runtime</code>): falha
+          determinística em <code>smoke hardening</code> com
+          <code>top-level=4 esperado 0</code>. Reproduzido também com
+          <code>commd.sh</code> em HEAD pré-PR1C — débito pré-existente
+          não relacionado ao registry. Registrado no journal como
+          <code>e-2026-05-19-001</code>. Provável race entre
+          <code>CONT</code> do <code>inotifywait</code>,
+          <code>reconcile_once</code> e flock por dest.
+        </td>
+        <td>
+          PR específica focada em diagnosticar a race. Não bloqueia
+          nenhum fluxo; smoke fecha com 40 PASS úteis.
+        </td>
+        <td class="center"><span class="badge warn">conhecido</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Primeiro target externo (sandbox/fake)</strong>:
+          o registry foi desenhado pra acomodar, mas nenhum target
+          não-interno foi exercitado. Os campos hipotéticos
+          (<code>owner</code> override, <code>enabled</code>,
+          <code>kind: external</code>) seguem fora do schema atual.
+        </td>
+        <td>
+          Próximo épico do andaime: adicionar um target fake/sandbox
+          e exercitar o fluxo ponta-a-ponta. Aí emergem os requisitos
+          concretos para os campos adicionais.
+        </td>
+        <td class="center"><span class="badge warn">próximo</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Fixtures <code>core</code>/<code>mmb-core</code> em
+          <code>tests/</code></strong>: ~169 sítios em
+          <code>mmb-logger/tests/</code> + ~100 em smoke. Limpeza
+          completa fica pra PR específica focada em "limpar dest
+          sintético do smoke" e reescrever fixtures do logger.
+        </td>
+        <td>
+          Rodada dedicada de cleanup de fixtures. Sem urgência —
+          fixtures não afetam produção.
+        </td>
+        <td class="center"><span class="badge warn">débito</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Outros consumidores menores</strong>:
+          <code>aquario-bridge.py</code> (<code>ORQ_NAMES</code>
+          ainda hardcoded — bug latente: não inclui
+          <code>logger</code>), <code>open-pr.sh</code> (deriva
+          <code>REPO_SHORT</code> do remote URL), <code>up.sh</code>
+          (comandos de runtime hardcoded por target).
+        </td>
+        <td>
+          PR pequena pra <code>aquario-bridge</code> (importa o
+          helper Python ou stub minimal). <code>open-pr.sh</code>
+          é ortogonal (vem de <code>git config</code>); cleanup
+          opcional. <code>up.sh</code> espera primeiro target
+          externo real.
+        </td>
+        <td class="center"><span class="badge warn">parcial</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top: 32px; color: var(--fg-dim); font-size: 14px;">
+    Tag git: <code>v0.13.0</code> ainda não foi criada — esta entry
+    documenta o fechamento da Fase 1 do rollout do target registry.
+    Selada quando o Rick rodar <code>git tag -a v0.13.0</code>.
+  </p>
 </section>
 
 <!-- ──────────────────────────────────────────────────────────── -->
