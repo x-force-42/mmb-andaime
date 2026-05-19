@@ -10,7 +10,7 @@
 # Uso:
 #   create-task-issue.sh <repo> <briefing-file> [--title <título>]
 #
-#   <repo>           mmb-core | mmb-cockpit | mmb-aquarium | mmb-logger
+#   <repo>           mmb-cockpit | mmb-aquarium | mmb-logger
 #   <briefing-file>  caminho pro arquivo de inbox com frontmatter
 #                    (.tooling/inbox/<short>/.../<ts>_master_briefing_<subject>.md)
 #   --title          override do título da issue. Default: subject do
@@ -25,7 +25,7 @@
 #
 # Frontmatter esperado no briefing-file:
 #   from: master
-#   to: core | cockpit | aquarium
+#   to: cockpit | aquarium | logger
 #   type: briefing
 #   subject: <kebab-case>
 #   thread: <epic-slug>
@@ -73,9 +73,9 @@ if [ -z "$REPO" ] || [ -z "$BRIEFING" ]; then
 fi
 
 case "$REPO" in
-  mmb-core|mmb-cockpit|mmb-aquarium|mmb-logger) ;;
+  mmb-cockpit|mmb-aquarium|mmb-logger) ;;
   *)
-    echo "ERRO: repo inválido '$REPO' (use mmb-core|mmb-cockpit|mmb-aquarium|mmb-logger)" >&2
+    echo "ERRO: repo inválido '$REPO' (use mmb-cockpit|mmb-aquarium|mmb-logger)" >&2
     exit 2
     ;;
 esac

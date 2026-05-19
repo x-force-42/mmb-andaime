@@ -189,7 +189,7 @@ Inclui (não exaustivo):
 - Status não-listado: `pr-mergeado`, `pr-fechado`, `pr-revisao-solicitada`,
   `build-quebrado`, `rollback`, `bloqueio-cross-repo`, etc
 - Frontmatter quebrado:
-  - sem `from:` ou `from:` desconhecido (`!= core|cockpit|aquarium|logger`)
+  - sem `from:` ou `from:` desconhecido (`!= cockpit|aquarium|logger`)
   - sem `thread:` (worker-master não tem como rotear sem isso)
   - `subject:` que não casa o padrão do `type` (ex: `type: status, subject: rename-field`)
 - Body contradiz frontmatter (subject diz `pr-aberto-9` mas body não
@@ -323,7 +323,7 @@ Se nenhuma das duas headers existe → seção não encontrada → ESCALA
 - ❌ **Não cria issue** (`gh issue create`). Sem exceção.
 - ❌ **Não mergeia PR** (`gh pr merge`). Sem exceção.
 - ❌ **Não aprova PR** (`gh pr review --approve`). Sem exceção.
-- ❌ **Não toca código de produção** dos 4 repos (mmb-core, mmb-cockpit,
+- ❌ **Não toca código de produção** dos 3 repos (mmb-cockpit,
   mmb-aquarium, mmb-logger).
 - ❌ **Não toca scripts do andaime** (`.tooling/bin/`, `.tooling/hooks/`,
   `.tooling/config.sh`). Refactor do andaime é trabalho do Mestre

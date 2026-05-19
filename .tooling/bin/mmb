@@ -24,8 +24,8 @@ PID_FILE="$STATE_DIR/commd.pid"
 COMMD_LOG="$LOG_DIR/commd.log"
 JOURNAL_LOG="$LOG_DIR/journal.jsonl"
 
-DESTS=(master core cockpit aquarium)
-REPOS=(mmb-core mmb-cockpit mmb-aquarium)
+DESTS=(master cockpit aquarium logger)
+REPOS=(mmb-cockpit mmb-aquarium mmb-logger)
 
 ASSUME_YES=0
 
@@ -438,37 +438,37 @@ cmd_logs() {
 
   if [ -z "$target" ]; then
     if [ ! -t 0 ]; then
-      echo "Uso: mmb logs <commd|core|cockpit|aquarium> [--follow] [-n N]" >&2
+      echo "Uso: mmb logs <commd|cockpit|aquarium|logger> [--follow] [-n N]" >&2
       return 2
     fi
     echo "Qual log?"
     echo "  1) commd"
-    echo "  2) core"
-    echo "  3) cockpit"
-    echo "  4) aquarium"
+    echo "  2) cockpit"
+    echo "  3) aquarium"
+    echo "  4) logger"
     printf '> '
     local pick
     read -r pick
     case "$pick" in
       1) target=commd ;;
-      2) target=core ;;
-      3) target=cockpit ;;
-      4) target=aquarium ;;
+      2) target=cockpit ;;
+      3) target=aquarium ;;
+      4) target=logger ;;
       *) echo "(opção inválida)" >&2; return 2 ;;
     esac
   fi
 
   local path
   case "$target" in
-    commd)                  path="$COMMD_LOG" ;;
-    core|cockpit|aquarium)  path="$LOG_DIR/workers/$target.log" ;;
+    commd)                          path="$COMMD_LOG" ;;
+    cockpit|aquarium|logger)        path="$LOG_DIR/workers/$target.log" ;;
     master)
       echo "mmb logs: 'master' não tem log dedicado." >&2
-      echo "Logs disponíveis: commd, core, cockpit, aquarium." >&2
+      echo "Logs disponíveis: commd, cockpit, aquarium, logger." >&2
       return 2
       ;;
     *)
-      echo "Uso: mmb logs <commd|core|cockpit|aquarium> [--follow] [-n N]" >&2
+      echo "Uso: mmb logs <commd|cockpit|aquarium|logger> [--follow] [-n N]" >&2
       return 2
       ;;
   esac
@@ -706,18 +706,18 @@ _menu_logs() {
     clear 2>/dev/null || true
     printf '%s\n' "$(_bold "=== Logs ===")"
     echo "1) commd"
-    echo "2) core"
-    echo "3) cockpit"
-    echo "4) aquarium"
+    echo "2) cockpit"
+    echo "3) aquarium"
+    echo "4) logger"
     echo "5) Journal (jsonl)"
     echo "b) Back"
     printf '> '
     local pick; read -r pick
     case "$pick" in
       1) cmd_logs commd;    _pause ;;
-      2) cmd_logs core;     _pause ;;
-      3) cmd_logs cockpit;  _pause ;;
-      4) cmd_logs aquarium; _pause ;;
+      2) cmd_logs cockpit;  _pause ;;
+      3) cmd_logs aquarium; _pause ;;
+      4) cmd_logs logger;   _pause ;;
       5) cmd_journal;       _pause ;;
       b|"") return 0 ;;
       *) echo "(opção inválida)"; sleep 1 ;;
@@ -774,7 +774,7 @@ Subcomandos:
   inbox [dead|processing]    Lista mensagens por destinatário
   daemon <sub>               status | stop (confirma) | start (informativo)
   logs [target] [--follow] [-n N]
-                             commd | core | cockpit | aquarium
+                             commd | cockpit | aquarium | logger
   journal [--follow] [-n N]  Tail de logs/journal.jsonl (jq se disponível)
   doctor                     preflight + smoke light + sumário
   cleanup                    Imprime opções de cleanup (não executa)

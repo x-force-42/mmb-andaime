@@ -1,7 +1,7 @@
 # `.tooling/` — andaime cross-repo do MMB
 
 Diretório de **orquestração e contrato** do ecossistema MMB. Vive
-fora dos 4 repos de produto (`mmb-core`, `mmb-cockpit`, `mmb-aquarium`,
+fora dos 3 repos de produto (`mmb-cockpit`, `mmb-aquarium`,
 `mmb-logger`) e os coordena. Não tem código de produto; existe pra ser
 usado, evoluído, e — quando o ponto de inflexão chegar — absorvido ou
 desligado.
@@ -96,9 +96,9 @@ transcript no reconcile do logger.
 │   └── test-pr-body.sh             ← testes shell do lib/pr-body.sh
 ├── inbox/                          ← mailbox por destinatário (runtime)
 │   ├── master/
-│   ├── core/
 │   ├── cockpit/
-│   └── aquarium/
+│   ├── aquarium/
+│   └── logger/
 ├── state/                          ← registry de agentes + heartbeats (runtime)
 ├── logs/                           ← logs de workers + journal (runtime)
 └── intents/                        ← histórico local de briefings (gitignored)
@@ -161,33 +161,33 @@ Override por sessão:
 
 ```bash
 MMB_MODE=fast .tooling/bin/up.sh
-MMB_MODEL_ATOMIC=claude-sonnet-4-6 .tooling/bin/spawn-atomic.sh mmb-core 1.1 4
+MMB_MODEL_ATOMIC=claude-sonnet-4-6 .tooling/bin/spawn-atomic.sh mmb-cockpit 1.1 4
 ```
 
 ## Fluxo completo (walk)
 
-1. Rick → tab master: *"limpar scripts/task-*.sh do mmb-core"*.
+1. Rick → tab master: *"adicionar coluna `model` em CiclosTable do mmb-cockpit"*.
 2. Master lê o repo read-only, produz briefing em
    `.tooling/intents/<date>-<slug>/master-briefing.md`, mostra na conversa.
 3. Rick aprova.
-4. Master: `msg.sh core briefing cleanup-scripts <briefing-path> cleanup-scripts`.
-5. `commd.sh` detecta arquivo em `inbox/core/`, spawna
-   `worker.sh core <arquivo>` = `claude -p` com profile do orq.
-6. Worker do orq core lê inbox + briefing, decide criar issue, roda:
+4. Master: `msg.sh cockpit briefing model-column <briefing-path> model-column`.
+5. `commd.sh` detecta arquivo em `inbox/cockpit/`, spawna
+   `worker.sh cockpit <arquivo>` = `claude -p` com profile do orq.
+6. Worker do orq cockpit lê inbox + briefing, decide criar issue, roda:
    ```bash
-   .tooling/bin/create-task-issue.sh mmb-core <briefing-path>
+   .tooling/bin/create-task-issue.sh mmb-cockpit <briefing-path>
    ```
    (wrapper injeta âncora `mmb-cycle-key` no body antes de chamar
    `gh issue create`).
-7. Worker do orq: `spawn-atomic.sh mmb-core 1.1 <issue-number>`.
+7. Worker do orq: `spawn-atomic.sh mmb-cockpit 1.1 <issue-number>`.
    Pane do atômico nasce embaixo dele (split vertical).
 8. Atômico lê issue (com âncora no body), executa, commita,
    `open-pr.sh` → push + `gh pr create` com `Closes #N` obrigatório
    + comment na issue + kill-pane em 8s.
-9. Orq core manda `msg.sh master status pr-aberto-N ...`.
+9. Orq cockpit manda `msg.sh master status pr-aberto-N ...`.
 10. Master vê resumo no pane, atualiza modelo mental.
 11. Rick revê PR, mergeia.
-12. Orq core (próxima vez que vier ao trabalho): `task-end.sh` +
+12. Orq cockpit (próxima vez que vier ao trabalho): `task-end.sh` +
     `msg.sh master status task-fechada ...`.
 13. Master marca briefing como ✅ + nota narrativa.
 

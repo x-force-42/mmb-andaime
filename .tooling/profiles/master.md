@@ -109,14 +109,14 @@ sem motivo — `inbox/` é audit trail.
 
 ```bash
 # Briefing single-repo
-msg.sh core briefing cleanup-scripts /MMB/.tooling/intents/2026-05-14-cleanup/briefing-core.md cleanup-scripts
+msg.sh cockpit briefing model-column /MMB/.tooling/intents/2026-05-18-model-column/briefing-cockpit.md model-column
 
 # Briefing cross-repo (1 por orq)
-msg.sh core briefing version-api /MMB/.tooling/intents/2026-05-14-version/core.md version-display
-msg.sh cockpit briefing version-ui /MMB/.tooling/intents/2026-05-14-version/cockpit.md version-display
+msg.sh logger briefing version-api /MMB/.tooling/intents/2026-05-18-version/logger.md version-display
+msg.sh cockpit briefing version-ui /MMB/.tooling/intents/2026-05-18-version/cockpit.md version-display
 
 # Responder a question
-echo "Use o nome 'priority' (matching cockpit form field)." | msg.sh core answer rename-field - cleanup-scripts
+echo "Use o nome 'model' (alinha com schema ciclos.model)." | msg.sh cockpit answer rename-field - model-column
 ```
 
 Sempre use o **`thread`** (5º arg) quando a mensagem pertence
@@ -173,10 +173,10 @@ Após Rick aprovar:
 
 ```bash
 # Single-repo
-msg.sh core briefing <slug> .tooling/intents/<date>-<slug>/master-briefing.md <slug>
+msg.sh cockpit briefing <slug> .tooling/intents/<date>-<slug>/master-briefing.md <slug>
 
 # Cross-repo (loop pelos repos)
-for r in core cockpit aquarium; do
+for r in cockpit aquarium logger; do
   brief=".tooling/intents/<date>-<slug>/briefings/${r}-<slug>.md"
   [ -f "$brief" ] && msg.sh $r briefing <slug> "$brief" <slug>
 done

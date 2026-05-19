@@ -30,9 +30,9 @@ do ecossistema MMB. Por que faz sentido. Qual o ganho.>
 
 O que cada repo é hoje, e o que está em jogo nesta intenção:
 
-- **mmb-core** — <papel + o que muda aqui>
 - **mmb-cockpit** — <papel + o que muda aqui>
 - **mmb-aquarium** — <papel + o que muda aqui>
+- **mmb-logger** — <papel + o que muda aqui>
 
 ## Contratos compartilhados (preencher se cross-repo)
 
@@ -47,9 +47,9 @@ Devem ser estáveis ao longo do épico:
 
 | ID | Projeto | Tarefa | Depende de |
 |---|---|---|---|
-| 1.1 | mmb-core | <título curto> | — |
-| 1.2 | mmb-core | <título curto> | 1.1 |
-| 2.1 | mmb-cockpit | <título curto> | 1.1 |
+| 1.1 | mmb-cockpit | <título curto> | — |
+| 1.2 | mmb-cockpit | <título curto> | 1.1 |
+| 2.1 | mmb-aquarium | <título curto> | 1.1 |
 
 (Pra single-repo, costuma ser só `1.1`.)
 
@@ -74,8 +74,8 @@ NÃO pode ser disparado — discovery não terminou.
 
 > Mestre atualiza conforme orqs locais criam issues e mandam status.
 
-- [ ] core #<n> — 1.1: <título>
-- [ ] cockpit #<n> — 2.1: <título>
+- [ ] cockpit #<n> — 1.1: <título>
+- [ ] aquarium #<n> — 2.1: <título>
 - (etc)
 
 ## Nota narrativa final (preenchida no fechamento)

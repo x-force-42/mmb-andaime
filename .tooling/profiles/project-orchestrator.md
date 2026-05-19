@@ -36,7 +36,7 @@
 ---
 
 Doc de referência pra worker que processa mensagens do papel **um**
-dos 3 repos do MMB (`mmb-core`, `mmb-cockpit`, `mmb-aquarium`).
+dos 3 repos do MMB (`mmb-cockpit`, `mmb-aquarium`, `mmb-logger`).
 
 ## Quem você é
 
@@ -84,9 +84,9 @@ fala só com o Mestre (e os atômicos que você spawna).
     └── docs/                      ← seu (orq) — não atômicos
 ```
 
-> **Nota:** o `seu-repo-short` é `core` / `cockpit` / `aquarium`
-> (sem o prefixo `mmb-`). Já o repo path completo é `mmb-core`,
-> `mmb-cockpit`, `mmb-aquarium`.
+> **Nota:** o `seu-repo-short` é `cockpit` / `aquarium` / `logger`
+> (sem o prefixo `mmb-`). Já o repo path completo é `mmb-cockpit`,
+> `mmb-aquarium`, `mmb-logger`.
 
 ## Polling-on-every-turn + supervision tick (OBSOLETO desde v0.3)
 
@@ -103,8 +103,8 @@ fala só com o Mestre (e os atômicos que você spawna).
 Quando aparecer no seu prompt uma linha começando com `MSG `:
 
 ```
-MSG [master->core] briefing: cleanup-scripts
-  inbox: /home/eliezer/llab/MMB/.tooling/inbox/core/2026-05-14T16-32-00Z_master_briefing_cleanup-scripts.md
+MSG [master->cockpit] briefing: model-column
+  inbox: /home/eliezer/llab/MMB/.tooling/inbox/cockpit/2026-05-18T16-32-00Z_master_briefing_model-column.md
 ```
 
 Leia o arquivo apontado e aja conforme o `type`:
@@ -164,12 +164,12 @@ heurística e escala pending-human por falso positivo.
 # Campos obrigatórios (ver contrato em protocol.md): issue_url,
 # issue_number, repo, thread.
 msg.sh master status issue-criada-3 - <thread> <<EOF
-issue_url: https://github.com/x-force-42/mmb-core/issues/3
+issue_url: https://github.com/x-force-42/mmb-cockpit/issues/3
 issue_number: 3
-repo: mmb-core
-thread: cleanup-scripts
+repo: mmb-cockpit
+thread: model-column
 
-Atômico 1.1 spawnado em worktree mmb-core/.worktrees/1.1-cleanup-scripts.
+Atômico 1.1 spawnado em worktree mmb-cockpit/.worktrees/1.1-model-column.
 EOF
 
 # Status pr-aberto-N — emitido após detectar PR aberto pelo atômico.
@@ -179,7 +179,7 @@ EOF
 # Levante o veredicto da suíte rodando localmente OU lendo do PR body
 # (open-pr.sh embute output de suíte em ## Suíte verde — A11).
 msg.sh master status pr-aberto-7 - <thread> <<EOF
-pr_url: https://github.com/x-force-42/mmb-core/pull/7
+pr_url: https://github.com/x-force-42/mmb-cockpit/pull/7
 pr_number: 7
 issue_number: 3
 suite_status: verde
@@ -190,14 +190,14 @@ EOF
 
 # Pergunta: briefing ambíguo, decisão fora do meu escopo
 msg.sh master question rename-cross-repo - <thread> <<EOF
-Brief diz pra renomear /api/runs pra /api/v1/runs. O cockpit
+Brief diz pra renomear /api/runs pra /api/v1/runs. O aquarium
 consome esse path; renomear quebra a UI dele. Isso é decisão
-cross-repo. Posso decidir só pra core?
+cross-repo. Posso decidir só pra cockpit?
 EOF
 
 # Erro: algo quebrou que afeta o trabalho
 msg.sh master error spawn-falhou - <thread> <<EOF
-spawn-atomic.sh mmb-core 1.1 retornou erro: ...
+spawn-atomic.sh mmb-cockpit 1.1 retornou erro: ...
 EOF
 ```
 
@@ -216,7 +216,7 @@ Use `event-slug` curto e reusável (ex: `spawn-failed`,
 repetidos cross-épico viram candidatos a guardrail. Guardrail L13.
 
 Convenções:
-- `thread` = o slug do épico (ex: `cleanup-scripts`).
+- `thread` = o slug do épico (ex: `model-column`).
 - Body pode ser stdin (`-`) ou arquivo.
 - `subject-slug` deve ser específico ("issue-criada-3" não
   "status").
@@ -329,7 +329,7 @@ chamada manual de `msg.sh` em v0.10+. Wrapper:
 ```bash
 /MMB/.tooling/bin/send-status-pr-opened.sh <repo-short> <pr-number> <issue-number> <thread>
 # Ex:
-/MMB/.tooling/bin/send-status-pr-opened.sh cockpit 42 17 cleanup-scripts
+/MMB/.tooling/bin/send-status-pr-opened.sh cockpit 42 17 model-column
 ```
 
 Override opcional (use só se tiver certeza — auto-detect é o padrão):

@@ -8,7 +8,7 @@
 > `claude -p` (modo print), processam UMA mensagem e morrem.
 >
 > Implicações:
-> - Orq locais não são mais sessões Claude vivas; tabs `core/cockpit/aquarium`
+> - Orq locais não são mais sessões Claude vivas; tabs `cockpit/aquarium/logger`
 >   do tmux viram só `tail -F` dos logs de worker.
 > - Master continua sessão Claude interativa (Rick conversa com ele).
 > - Atômicos continuam como estavam (panes efêmeros, open-pr.sh, kill-pane).
@@ -59,9 +59,9 @@ ao abrir PR.
 ```
 .tooling/inbox/
 ├── master/       ← mensagens recebidas pelo Mestre
-├── core/         ← recebidas pelo Orq de mmb-core
 ├── cockpit/      ← recebidas pelo Orq de mmb-cockpit
-└── aquarium/     ← recebidas pelo Orq de mmb-aquarium
+├── aquarium/     ← recebidas pelo Orq de mmb-aquarium
+└── logger/       ← recebidas pelo Orq de mmb-logger
 ```
 
 Cada arquivo é uma mensagem completa com frontmatter + corpo.
@@ -72,16 +72,16 @@ YYYY-MM-DDTHH-MM-SSZ_<from>_<type>_<subject-slug>.md
 ```
 
 Exemplos:
-- `2026-05-14T16-32-00Z_master_briefing_cleanup-scripts.md`
-- `2026-05-14T16-45-12Z_core_status_pr-aberto-3.md`
+- `2026-05-14T16-32-00Z_master_briefing_model-column.md`
+- `2026-05-14T16-45-12Z_cockpit_status_pr-aberto-3.md`
 - `2026-05-14T16-50-00Z_master_answer_brief-ambiguidade.md`
 
 ## Schema de mensagem
 
 ```markdown
 ---
-from: <master|core|cockpit|aquarium>
-to: <master|core|cockpit|aquarium>
+from: <master|cockpit|aquarium|logger>
+to: <master|cockpit|aquarium|logger>
 type: <briefing|question|answer|status|error>
 subject: <kebab-case-curto>
 thread: <épico-slug ou conversation-id>   # opcional
@@ -126,7 +126,7 @@ sub-issue do épico.
 |---|---|---|
 | `issue_url` | URL absoluta `https://github.com/<owner>/<repo>/issues/<N>` | sim |
 | `issue_number` | N (mesmo do subject) | sim |
-| `repo` | `mmb-core` \| `mmb-cockpit` \| `mmb-aquarium` \| `mmb-logger` | sim |
+| `repo` | `mmb-cockpit` \| `mmb-aquarium` \| `mmb-logger` | sim |
 | `thread` | slug do épico (mesmo do frontmatter) | sim |
 
 Exemplo de body:
@@ -231,8 +231,8 @@ M5/L8/A6 proíbem pular.
 linhas via `tmux send-keys` pra tab dele:
 
 ```
-MSG [master->core] briefing: cleanup-scripts
-  inbox: /home/eliezer/llab/MMB/.tooling/inbox/core/2026-05-14T16-32-00Z_master_briefing_cleanup-scripts.md
+MSG [master->cockpit] briefing: model-column
+  inbox: /home/eliezer/llab/MMB/.tooling/inbox/cockpit/2026-05-14T16-32-00Z_master_briefing_model-column.md
 ```
 
 **Por que o ping é ASCII puro (sem emoji, sem aspas):** o
@@ -266,17 +266,17 @@ msg.sh <to> <type> <subject-slug> <body-file> [thread]
 ### Fluxo 1 — briefing single-repo
 
 ```
-Rick → master pane: "limpar scripts X do mmb-core"
+Rick → master pane: "adicionar coluna model em CiclosTable do mmb-cockpit"
 master:
   1. lê repo read-only
-  2. produz briefing em .tooling/intents/<date>-<slug>/briefing-core.md
-  3. msg.sh core briefing <slug> <briefing-file> <slug>
+  2. produz briefing em .tooling/intents/<date>-<slug>/briefing-cockpit.md
+  3. msg.sh cockpit briefing <slug> <briefing-file> <slug>
 
-core (recebe ping):
+cockpit (recebe ping):
   1. lê arquivo no inbox
   2. lê briefing apontado (ou inline, depende)
-  3. cria sub-issue no GitHub (labels: task, project:mmb-core)
-  4. spawn-atomic.sh mmb-core <id> <issue-number>
+  3. cria sub-issue no GitHub (labels: task, project:mmb-cockpit)
+  4. spawn-atomic.sh mmb-cockpit <id> <issue-number>
   5. msg.sh master status issue-criada <body> <slug>
 
 atômico (pane novo):
@@ -284,12 +284,12 @@ atômico (pane novo):
   2. executa, commita, push
   3. open-pr.sh → push + gh pr create + kill-pane em 8s
 
-core (detecta PR):
+cockpit (detecta PR):
   msg.sh master status pr-aberto <body> <slug>
 
 Rick → revisa PR, mergeia.
 
-core (próxima vez que checar):
+cockpit (próxima vez que checar):
   1. task-end.sh
   2. msg.sh master status task-fechada <body> <slug>
 
@@ -300,20 +300,20 @@ master:
 ### Fluxo 2 — escalação de dúvida
 
 ```
-core (lendo briefing):
+cockpit (lendo briefing):
   "esse brief diz pra rename X mas X é importado por Y em outro repo
    — fora do escopo da minha task, escalando"
 
-core: msg.sh master question rename-cross-repo <pergunta> <thread>
+cockpit: msg.sh master question rename-cross-repo <pergunta> <thread>
 
 master (recebe ping):
   1. lê pergunta
   2. avalia: pode decidir sozinho?
-     - se sim: msg.sh core answer rename-cross-repo <decisão>
+     - se sim: msg.sh cockpit answer rename-cross-repo <decisão>
      - se não: conversa com Rick na própria tab master
   3. responde
 
-core (recebe answer):
+cockpit (recebe answer):
   prossegue com a decisão
 ```
 
@@ -323,8 +323,8 @@ core (recebe answer):
 master:
   1. produz briefing mestre em .tooling/intents/<date>-<slug>/master-briefing.md
   2. produz N child briefings (1 por projeto)
-  3. msg.sh core briefing <slug> <core-briefing>  thread=<slug>
-  4. msg.sh cockpit briefing <slug> <cockpit-briefing>  thread=<slug>
+  3. msg.sh cockpit briefing <slug> <cockpit-briefing>  thread=<slug>
+  4. msg.sh aquarium briefing <slug> <aquarium-briefing>  thread=<slug>
   5. (se houver deps cross-repo, briefings carregam requires)
 
 cada orq local: idem fluxo 1, em paralelo
@@ -351,7 +351,7 @@ master: agrega status pelo thread
   manual ou via script futuro.
 - **`MMB_TAB` env não está garantido:** detecção via nome de
   window pode falhar se você renomear as tabs. Solução: setar
-  `MMB_TAB=master` (ou core/etc) no início de cada sessão via
+  `MMB_TAB=master` (ou cockpit/etc) no início de cada sessão via
   `up.sh`.
 
 ## Diário de bordo compartilhado (v0.2+)
@@ -399,8 +399,8 @@ de agentes**:
 
 **Convenções de agent-id:**
 - Orq mestre: `master`
-- Orq de projeto: `core` / `cockpit` / `aquarium`
-- Atômico: `<repo-short>-<task-id>` (ex: `core-X1`)
+- Orq de projeto: `cockpit` / `aquarium` / `logger`
+- Atômico: `<repo-short>-<task-id>` (ex: `cockpit-X1`)
 
 **Supervision tick:** orq local roda `agents.sh check-children
 <seu-id>` periodicamente (ver profile do orq). Filhos com

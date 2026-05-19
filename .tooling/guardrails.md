@@ -47,7 +47,7 @@ isso é mitigado.
 
 ### M4 — Conversar com orq local fora do `msg.sh`
 
-❌ `tmux send-keys -t mmb:core "..."` manual.
+❌ `tmux send-keys -t mmb:cockpit "..."` manual.
 ✅ Sempre via `msg.sh` — garante audit trail + frontmatter
    + ping consistente.
 🛡️ Profile lista `msg.sh` como **único canal de saída**.
@@ -103,7 +103,7 @@ isso é mitigado.
 
 ### L4 — Spawnar atômico sem criar issue antes
 
-❌ `spawn-atomic.sh mmb-core 1.1` sem ter rodado `gh issue create`.
+❌ `spawn-atomic.sh mmb-cockpit 1.1` sem ter rodado `gh issue create`.
 ✅ Sequência rígida: 1) `gh issue create`, 2) anota número,
    3) `spawn-atomic.sh <repo> <id> <issue-number>`.
 🛡️ `spawn-atomic.sh` v3 **exige** issue# como 3º arg (não

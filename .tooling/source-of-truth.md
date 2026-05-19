@@ -195,7 +195,7 @@ bloco:
 Campos:
 
 - `<epic_slug>` — `thread` do briefing (ex: `mmb-logger-destilacao`).
-- `<project_short>` — `core` / `cockpit` / `aquarium` (o `to` do briefing).
+- `<project_short>` — `cockpit` / `aquarium` / `logger` (o `to` do briefing).
 - `<briefing_created_ts>` — `created` do frontmatter em ISO8601 (`2026-05-16T01:53:10Z`).
 - `<basename>` — nome do arquivo de briefing sem path
   (`2026-05-16T01-53-10Z_master_briefing_<subject>.md`).
@@ -331,8 +331,8 @@ Encoding determinístico validado fase 0:
 path.replace("/", "-").replace(".", "-")
 ```
 
-Ex: `/home/eliezer/llab/MMB/mmb-core/.worktrees/X1-cleanup-task-scripts` →
-`-home-eliezer-llab-MMB-mmb-core--worktrees-X1-cleanup-task-scripts`.
+Ex: `/home/eliezer/llab/MMB/mmb-cockpit/.worktrees/X1-cleanup-task-scripts` →
+`-home-eliezer-llab-MMB-mmb-cockpit--worktrees-X1-cleanup-task-scripts`.
 
 Reconciler:
 1. Lê `pr.head_ref_name` do PR linkado ao ciclo (convenção `task/<id>-<slug>`).
@@ -524,7 +524,7 @@ warning ruidoso, não silêncio.
 | PR body contém `Closes #<N>` | atômico (`open-pr.sh` valida `GH_SUBISSUE` e injeta automaticamente; fail-loud antes do push se ausente/inválido) | reconciler grep no body do PR; ausente → warning `pr-without-closes` (cenário só possível pra PRs criados fora do método) |
 | Branch = `task/<task-id>-<slug>` | atômico (`task-start.sh`) | reconciler valida `pr.headRefName` |
 | Worktree = `<repo>/.worktrees/<task-id>-<slug>` | atômico | usado pra encontrar transcript Claude (fase 4) |
-| Briefing `to` ∈ {core, cockpit, aquarium} | master (via `msg.sh`) | já validado em msg.sh; reconciler revalida |
+| Briefing `to` ∈ {cockpit, aquarium, logger} | master (via `msg.sh`) | já validado em msg.sh; reconciler revalida |
 | Briefing tem `thread` em frontmatter | master | sem thread, reconciler não consegue âncora; warning |
 | Agent-id de atômico = `<repo-short>-<task-id>` | `spawn-atomic.sh` | usado pra linkar agent events a ciclo |
 

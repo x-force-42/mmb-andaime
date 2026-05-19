@@ -14,7 +14,7 @@
 # Uso (manual ou via commd):
 #   worker.sh <dest> <inbox-file>
 #
-#   <dest>        master | core | cockpit | aquarium | logger
+#   <dest>        master | cockpit | aquarium | logger
 #   <inbox-file>  caminho absoluto pra arquivo de mensagem
 #
 # Concorrência: commd serializa via flock por destinatário antes
@@ -36,7 +36,7 @@ if [ -z "$DEST" ] || [ -z "$INBOX_FILE" ]; then
 fi
 
 case "$DEST" in
-  master|core|cockpit|aquarium|logger) ;;
+  master|cockpit|aquarium|logger) ;;
   *) echo "ERRO: dest inválido: $DEST" >&2; exit 2;;
 esac
 
@@ -54,11 +54,6 @@ case "$DEST" in
     # reforçar que esta invocação é descartável (1 mensagem, morre).
     PROFILE="$TOOLING_DIR/profiles/master-worker.md"
     LAYER="master"
-    ;;
-  core)
-    CWD="$MMB_ROOT/mmb-core"
-    PROFILE="$TOOLING_DIR/profiles/project-orchestrator.md"
-    LAYER="project"
     ;;
   cockpit)
     CWD="$MMB_ROOT/mmb-cockpit"

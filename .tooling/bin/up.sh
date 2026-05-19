@@ -4,11 +4,10 @@
 # Layout:
 #   window 0 master   → Orq Mestre (Claude Code interativo, único vivo)
 #   window 1 commd    → comm daemon (inotifywait + dispatch workers)
-#   window 2 core     → tail -F logs/workers/core.log    (visualização)
-#   window 3 cockpit  → tail -F logs/workers/cockpit.log
-#   window 4 aquarium → tail -F logs/workers/aquarium.log
-#   window 5 logger   → tail -F logs/workers/logger.log
-#   window 6 journal  → tail -F logs/journal.jsonl | jq  (opcional)
+#   window 2 cockpit  → tail -F logs/workers/cockpit.log  (visualização)
+#   window 3 aquarium → tail -F logs/workers/aquarium.log
+#   window 4 logger   → tail -F logs/workers/logger.log
+#   window 5 journal  → tail -F logs/journal.jsonl | jq  (opcional)
 #   window aquario    → relay + vite preview (UI aquarium)
 #   window cockpit-ui → vite preview (UI cockpit)
 #   window bridge     → aquario-bridge.py
@@ -17,7 +16,7 @@
 # Mudança crítica vs v0.1/v0.2: orq locais NÃO são mais sessões
 # Claude interativas. Eles viram processos efêmeros (workers)
 # disparados pelo commd quando msg.sh entrega uma mensagem.
-# As tabs core/cockpit/aquarium agora são só janelas de observação.
+# As tabs cockpit/aquarium/logger agora são só janelas de observação.
 #
 # Uso:
 #   .tooling/bin/up.sh                       # normal (Opus tudo)
@@ -46,14 +45,14 @@ MMB_ROOT="$(dirname "$TOOLING_DIR")"
 source "$TOOLING_DIR/config.sh"
 
 # Diretórios essenciais (idempotente)
-for d in master core cockpit aquarium logger; do
+for d in master cockpit aquarium logger; do
   mkdir -p "$TOOLING_DIR/inbox/$d"
 done
 mkdir -p "$TOOLING_DIR/state/heartbeats" \
          "$TOOLING_DIR/logs/workers"
 
 # Toca os logs pra tail -F não reclamar de arquivo inexistente
-for d in master core cockpit aquarium logger; do
+for d in master cockpit aquarium logger; do
   touch "$TOOLING_DIR/logs/workers/$d.log"
 done
 touch "$TOOLING_DIR/logs/commd.log"
@@ -85,7 +84,7 @@ if [ "$NO_MASTER_CLAUDE" -eq 1 ]; then
   tmux send-keys -t "$SESSION:master" \
     "echo 'master window: no Claude (use external Claude Code session). MMB_MODE=$MMB_MODE'" C-m
 else
-  MASTER_PROMPT="Você é o Orquestrador Mestre do MMB (modo $MMB_MODE). Leia nesta ordem ANTES de qualquer outra coisa: /MMB/CLAUDE.md, /MMB/.tooling/protocol.md, /MMB/.tooling/guardrails.md, /MMB/.tooling/profiles/master.md. Quando terminar de ler, cumprimente Rick em 1-2 linhas e pergunte em que pode ajudar. ARQUITETURA v0.3: orq locais (core/cockpit/aquarium) são WORKERS STATELESS — quando você roda msg.sh, o commd dispara um processo claude -p efêmero do papel correto e o output vai pra tab tmux correspondente. Você (Mestre) continua interativo. REGRAS DURAS: (1) nunca rode 'gh issue create'; orq local materializa. (2) antes de qualquer msg.sh briefing, mostre o briefing pro Rick e aguarde 'ok'. (3) toda comunicação com orq via /MMB/.tooling/bin/msg.sh. (4) antes de iniciar trabalho, liste pendências em /MMB/.tooling/inbox/master/ via ls."
+  MASTER_PROMPT="Você é o Orquestrador Mestre do MMB (modo $MMB_MODE). Leia nesta ordem ANTES de qualquer outra coisa: /MMB/CLAUDE.md, /MMB/.tooling/protocol.md, /MMB/.tooling/guardrails.md, /MMB/.tooling/profiles/master.md. Quando terminar de ler, cumprimente Rick em 1-2 linhas e pergunte em que pode ajudar. ARQUITETURA v0.3: orq locais (cockpit/aquarium/logger) são WORKERS STATELESS — quando você roda msg.sh, o commd dispara um processo claude -p efêmero do papel correto e o output vai pra tab tmux correspondente. Você (Mestre) continua interativo. REGRAS DURAS: (1) nunca rode 'gh issue create'; orq local materializa. (2) antes de qualquer msg.sh briefing, mostre o briefing pro Rick e aguarde 'ok'. (3) toda comunicação com orq via /MMB/.tooling/bin/msg.sh. (4) antes de iniciar trabalho, liste pendências em /MMB/.tooling/inbox/master/ via ls."
   tmux send-keys -t "$SESSION:master" \
     "claude $MASTER_FLAGS \"$MASTER_PROMPT\"" C-m
 fi
@@ -95,9 +94,9 @@ tmux new-window -t "$SESSION" -n commd -c "$MMB_ROOT"
 tmux send-keys -t "$SESSION:commd" \
   "export MMB_MODE=$MMB_MODE; $TOOLING_DIR/bin/commd.sh fg" C-m
 
-# ─── Windows 2-5: tail -F dos workers (core, cockpit, aquarium, logger) ──
+# ─── Windows 2-4: tail -F dos workers (cockpit, aquarium, logger) ──
 WINDOW_IDX=2
-for project in mmb-core mmb-cockpit mmb-aquarium mmb-logger; do
+for project in mmb-cockpit mmb-aquarium mmb-logger; do
   short="${project#mmb-}"
   if [ -d "$MMB_ROOT/$project/.git" ]; then
     tmux new-window -t "$SESSION" -n "$short" -c "$MMB_ROOT/$project"
