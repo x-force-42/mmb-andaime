@@ -36,12 +36,29 @@ mmb_targets_load || {
   exit 2
 }
 
-# Lista de repos full (mmb-<id>) montada do registry. Ordem segue o JSON.
+# Lista de repos full (mmb-<id>) e ids gerenciáveis pelo reset, montada
+# do registry. PR 2C: filtra por managed_by_reset=true. Targets com a
+# flag false (ex.: external com worktree em /tmp ou repo de terceiros)
+# ficam fora de fases destrutivas — protege contra reset acidental
+# em projeto externo.
 REPOS=()
+RESET_IDS=()
+SKIPPED_REPOS=()
 for _id in $(mmb_targets_list); do
-  REPOS+=("$(mmb_target_repo "$_id")")
+  if [ "$(mmb_target_managed_by_reset "$_id")" = "true" ]; then
+    REPOS+=("$(mmb_target_repo "$_id")")
+    RESET_IDS+=("$_id")
+  else
+    SKIPPED_REPOS+=("$(mmb_target_repo "$_id") (id=$_id, managed_by_reset=false)")
+  fi
 done
 unset _id
+
+if [ "${#SKIPPED_REPOS[@]}" -gt 0 ]; then
+  echo "ℹ Reset NÃO vai operar nestes targets (managed_by_reset=false):" >&2
+  for _s in "${SKIPPED_REPOS[@]}"; do echo "    - $_s" >&2; done
+  unset _s
+fi
 
 # Helper PR 2B: dado um repo do registry, retorna "<owner>/<repo>"
 # usando owner per-target. Fallback para GH_OWNER global se repo
@@ -124,7 +141,7 @@ phase_kill_claudes() {
     return
   fi
   local my_pane="${TMUX_PANE:-}"
-  for win in $(mmb_targets_list); do
+  for win in "${RESET_IDS[@]}"; do
     local pane
     pane=$(tmux list-panes -t "mmb:$win" -F "#{pane_id}" 2>/dev/null | head -1 || true)
     [ -z "$pane" ] && continue
