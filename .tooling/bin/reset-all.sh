@@ -26,8 +26,22 @@
 set -euo pipefail
 
 MMB_ROOT="${MMB_ROOT:-/home/eliezer/llab/MMB}"
-REPOS=(mmb-cockpit mmb-aquarium mmb-logger)
 GH_OWNER="${MMB_GH_OWNER:-x-force-42}"
+
+# Registry de targets (PR 1D: reset-all consome).
+# shellcheck disable=SC1091
+source "$MMB_ROOT/.tooling/lib/targets.sh"
+mmb_targets_load || {
+  echo "ERRO: registry de targets inválido. Abortando reset-all." >&2
+  exit 2
+}
+
+# Lista de repos full (mmb-<id>) montada do registry. Ordem segue o JSON.
+REPOS=()
+for _id in $(mmb_targets_list); do
+  REPOS+=("$(mmb_target_repo "$_id")")
+done
+unset _id
 
 DRY_RUN=0
 ASSUME_YES=0
@@ -95,7 +109,7 @@ phase_kill_claudes() {
     return
   fi
   local my_pane="${TMUX_PANE:-}"
-  for win in cockpit aquarium logger; do
+  for win in $(mmb_targets_list); do
     local pane
     pane=$(tmux list-panes -t "mmb:$win" -F "#{pane_id}" 2>/dev/null | head -1 || true)
     [ -z "$pane" ] && continue
@@ -232,7 +246,7 @@ phase_messaging() {
 
   if [ "$NO_ARCHIVE" -eq 0 ]; then
     run "mkdir -p '$ARCHIVE/inbox' '$ARCHIVE/intents' '$ARCHIVE/state' '$ARCHIVE/logs/workers'"
-    for d in master cockpit aquarium logger; do
+    for d in $(mmb_dests_list); do
       run "mkdir -p '$ARCHIVE/inbox/$d'"
       if [ "$DRY_RUN" -eq 0 ]; then
         find "$tooling/inbox/$d" -maxdepth 1 -name '*.md' \
@@ -276,7 +290,7 @@ phase_messaging() {
     fi
   else
     # delete direto
-    for d in master cockpit aquarium logger; do
+    for d in $(mmb_dests_list); do
       run "find '$tooling/inbox/$d' -maxdepth 1 -name '*.md' -delete"
       for sub in .processing .done .dead; do
         run "find '$tooling/inbox/$d/$sub' -maxdepth 1 -name '*.md' -delete 2>/dev/null || true"
@@ -324,7 +338,7 @@ phase_verify() {
       echo "  ✓ $repo GitHub limpo"
     fi
   done
-  for d in master cockpit aquarium logger; do
+  for d in $(mmb_dests_list); do
     local n
     # Conta top-level + lifecycle subdirs (.processing/.done/.dead)
     n=$(find "$MMB_ROOT/.tooling/inbox/$d" -maxdepth 2 -name '*.md' 2>/dev/null | wc -l)

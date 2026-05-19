@@ -9,7 +9,7 @@
 #
 # Uso:
 #   echo "body markdown" | write-pending-human.sh \
-#     --from <core|cockpit|aquarium|logger> \
+#     --from <id de target registrado, ou master> \
 #     --type <status|question|error|answer> \
 #     --subject <slug> \
 #     --thread <slug> \
@@ -27,6 +27,13 @@ set -euo pipefail
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 [ -f "$TOOLING_DIR/config.sh" ] && source "$TOOLING_DIR/config.sh" 2>/dev/null || true
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/lib/targets.sh"
+mmb_targets_load || {
+  echo "ERRO: registry de targets inválido. Abortando write-pending-human." >&2
+  exit 1
+}
+_MMB_DESTS_PADDED=" $(mmb_dests_list) "
 
 STATE_DIR="${MMB_STATE_DIR:-$TOOLING_DIR/state}"
 PENDING_DIR="${MMB_PENDING_HUMAN_DIR:-$STATE_DIR/pending-human}"
@@ -72,9 +79,9 @@ if [ ${#missing[@]} -gt 0 ]; then
   exit 1
 fi
 
-case "$FROM" in
-  core|cockpit|aquarium|logger|master) ;;
-  *) echo "ERRO: --from inválido: '$FROM' (core|cockpit|aquarium|logger|master)" >&2; exit 1 ;;
+case "$_MMB_DESTS_PADDED" in
+  *" $FROM "*) ;;
+  *) echo "ERRO: --from inválido: '$FROM' (válidos:$_MMB_DESTS_PADDED)" >&2; exit 1 ;;
 esac
 
 case "$TYPE" in

@@ -5,9 +5,9 @@
 #   .tooling/bin/task-start.sh <repo> <task-id>
 #
 # Exemplos:
-#   .tooling/bin/task-start.sh mmb-core C1
 #   .tooling/bin/task-start.sh mmb-cockpit F0
 #   .tooling/bin/task-start.sh mmb-aquarium V1
+#   .tooling/bin/task-start.sh mmb-logger L1
 #
 # Resultado: worktree em <repo>/.worktrees/<id>-<slug> com branch
 # task/<id>-<slug> baseada num master atualizado.

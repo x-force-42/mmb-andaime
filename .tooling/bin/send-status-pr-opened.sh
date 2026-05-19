@@ -12,7 +12,7 @@
 #   send-status-pr-opened.sh <repo-short> <pr-number> <issue-number> <thread>
 #     [--suite-status <verde|vermelha|pulada|ausente>]
 #
-#   <repo-short>: core | cockpit | aquarium | logger
+#   <repo-short>: <id> de target registrado (mmb_targets_list)
 #   <pr-number>:  número do PR (positivo)
 #   <issue-number>: número da sub-issue que o PR fecha
 #   <thread>:     slug do épico
@@ -33,8 +33,14 @@ set -euo pipefail
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/lib/targets.sh"
+mmb_targets_load || {
+  echo "ERRO: registry de targets inválido. Abortando send-status-pr-opened." >&2
+  exit 2
+}
 
-VALID_REPOS="core cockpit aquarium logger"
+VALID_REPOS=$(mmb_targets_list)
 VALID_SUITE_STATUS="verde vermelha pulada ausente"
 
 usage() {

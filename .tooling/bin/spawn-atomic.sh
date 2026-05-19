@@ -49,13 +49,28 @@ fi
 
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MMB_ROOT="$(dirname "$TOOLING_DIR")"
-REPO_PATH="$MMB_ROOT/$REPO"
 
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/lib/targets.sh"
+mmb_targets_load || {
+  echo "ERRO: registry de targets inválido. Abortando spawn-atomic." >&2
+  exit 2
+}
+
+# Valida que $REPO é target registrado. REPO_SHORT (= id) e REPO_PATH
+# saem do registry — fonte única em vez de derivação por strip de prefixo.
+REPO_SHORT="${REPO#mmb-}"
+if ! mmb_target_exists "$REPO_SHORT" || [ "$(mmb_target_repo "$REPO_SHORT")" != "$REPO" ]; then
+  _VALID=$(mmb_targets_list | tr ' ' '\n' | sed 's/^/mmb-/' | tr '\n' '|' | sed 's/|$//')
+  echo "ERRO: repo '$REPO' não está registrado em targets.json (válidos: $_VALID)" >&2
+  exit 2
+fi
+REPO_PATH=$(mmb_target_path "$REPO_SHORT")
 
 if [ ! -d "$REPO_PATH/.git" ]; then
-  echo "ERRO: '$REPO' não é um repo git em $REPO_PATH." >&2
+  echo "ERRO: '$REPO' está no registry mas $REPO_PATH/.git não existe." >&2
   exit 2
 fi
 
@@ -116,9 +131,8 @@ asdf reshim nodejs 2>/dev/null || true
 
 ATOMIC_FLAGS=$(mmb_claude_flags atomic)
 
-# Agent ID do atômico: <repo-short>-<task-id> (ex: core-X1).
-# Necessário pro registry de agentes (v0.1) e pro heartbeat.
-REPO_SHORT="${REPO#mmb-}"
+# Agent ID do atômico: <repo-short>-<task-id> (ex: cockpit-X1).
+# REPO_SHORT já foi validado contra o registry no topo.
 AGENT_ID="${REPO_SHORT}-${TASK_ID}"
 PARENT_AGENT="$REPO_SHORT"
 

@@ -10,7 +10,7 @@
 # Uso:
 #   create-task-issue.sh <repo> <briefing-file> [--title <título>]
 #
-#   <repo>           mmb-cockpit | mmb-aquarium | mmb-logger
+#   <repo>           mmb-<id> de target registrado em .tooling/targets.json
 #   <briefing-file>  caminho pro arquivo de inbox com frontmatter
 #                    (.tooling/inbox/<short>/.../<ts>_master_briefing_<subject>.md)
 #   --title          override do título da issue. Default: subject do
@@ -25,7 +25,7 @@
 #
 # Frontmatter esperado no briefing-file:
 #   from: master
-#   to: cockpit | aquarium | logger
+#   to: <id> de target registrado
 #   type: briefing
 #   subject: <kebab-case>
 #   thread: <epic-slug>
@@ -36,6 +36,12 @@ set -euo pipefail
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/lib/targets.sh"
+mmb_targets_load || {
+  echo "ERRO: registry de targets inválido. Abortando create-task-issue." >&2
+  exit 2
+}
 
 # ── Args ──────────────────────────────────────────────────────────
 
@@ -72,14 +78,12 @@ if [ -z "$REPO" ] || [ -z "$BRIEFING" ]; then
   exit 2
 fi
 
-case "$REPO" in
-  mmb-cockpit|mmb-aquarium|mmb-logger) ;;
-  *)
-    echo "ERRO: repo inválido '$REPO' (use mmb-cockpit|mmb-aquarium|mmb-logger)" >&2
-    exit 2
-    ;;
-esac
 REPO_SHORT="${REPO#mmb-}"
+if ! mmb_target_exists "$REPO_SHORT" || [ "$(mmb_target_repo "$REPO_SHORT")" != "$REPO" ]; then
+  _VALID=$(mmb_targets_list | tr ' ' '\n' | sed 's/^/mmb-/' | tr '\n' '|' | sed 's/|$//')
+  echo "ERRO: repo inválido '$REPO' (use $_VALID)" >&2
+  exit 2
+fi
 
 if [ ! -f "$BRIEFING" ]; then
   echo "ERRO: briefing-file não existe: $BRIEFING" >&2
