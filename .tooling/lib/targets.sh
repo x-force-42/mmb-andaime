@@ -19,12 +19,17 @@
 #   source "$TOOLING_DIR/lib/targets.sh"
 #   for t in $(mmb_targets_list); do ... done
 
-# ─── Resolução de MMB_ROOT ──────────────────────────────────────
+# ─── Resolução de paths ─────────────────────────────────────────
 # Robusto a quem fez source: deriva do path do próprio arquivo.
-# Permite override via env (útil em testes/smoke sandbox).
+# O registry vive junto da lib (tooling_dir/targets.json) — anchored na
+# localização da lib em vez de "MMB_ROOT + .tooling" literal. Isso casa
+# tanto produção (.tooling/lib/...) quanto sandbox (tooling/lib/...) sem
+# depender do dot-prefix do diretório.
+# MMB_ROOT permanece overridable via env (resolução de local_path).
 _mmb_targets_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-: "${MMB_ROOT:=$(cd "$_mmb_targets_lib_dir/../.." && pwd)}"
-_MMB_TARGETS_FILE="$MMB_ROOT/.tooling/targets.json"
+_mmb_targets_tooling_dir="$(cd "$_mmb_targets_lib_dir/.." && pwd)"
+: "${MMB_ROOT:=$(cd "$_mmb_targets_tooling_dir/.." && pwd)}"
+_MMB_TARGETS_FILE="$_mmb_targets_tooling_dir/targets.json"
 
 # Caches populados por mmb_targets_load.
 _MMB_TARGETS_LOADED=0

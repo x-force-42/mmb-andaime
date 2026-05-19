@@ -414,6 +414,7 @@ _sandbox_setup() {
 
   mkdir -p \
     "$_SANDBOX_TOOLING/bin" \
+    "$_SANDBOX_TOOLING/lib" \
     "$_SANDBOX_TOOLING/profiles" \
     "$_SANDBOX_TOOLING/state" \
     "$_SANDBOX_TOOLING/logs/workers" \
@@ -421,10 +422,11 @@ _sandbox_setup() {
     "$SANDBOX/tmp" \
     "$SANDBOX/mmb-core" \
     "$SANDBOX/mmb-cockpit" \
-    "$SANDBOX/mmb-aquarium"
+    "$SANDBOX/mmb-aquarium" \
+    "$SANDBOX/mmb-logger"
 
   local d
-  for d in master core cockpit aquarium; do
+  for d in master core cockpit aquarium logger; do
     mkdir -p "$_SANDBOX_TOOLING/inbox/$d/.processing" \
              "$_SANDBOX_TOOLING/inbox/$d/.done" \
              "$_SANDBOX_TOOLING/inbox/$d/.dead"
@@ -435,6 +437,58 @@ _sandbox_setup() {
   cp "$TOOLING_DIR/bin/msg.sh"    "$_SANDBOX_TOOLING/bin/"
   chmod +x "$_SANDBOX_TOOLING/bin/"*.sh
   cp "$TOOLING_DIR/config.sh" "$_SANDBOX_TOOLING/"
+  cp "$TOOLING_DIR/lib/targets.sh" "$_SANDBOX_TOOLING/lib/"
+
+  # Registry sandbox-only. `core` é dest sintético dos lifecycle tests
+  # (L4/L5/L6/M1/M2/M3); NÃO existe em produção — produção tem apenas
+  # cockpit/aquarium/logger. Mantido aqui pra evitar refactor maciço dos
+  # 100+ sítios de teste; limpeza fica pra PR futura específica.
+  # tracked_by_logger=false em 'core' sinaliza explicitamente que não é
+  # target produtivo.
+  cat > "$_SANDBOX_TOOLING/targets.json" <<'JSON'
+{
+  "_note": "Sandbox-only registry. 'core' é dest sintético de teste, não target de produção. Produção (/MMB/.tooling/targets.json) tem apenas cockpit/aquarium/logger.",
+  "schema_version": 1,
+  "targets": [
+    {
+      "id": "core",
+      "dest": "core",
+      "repo": "mmb-core",
+      "local_path": "mmb-core",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": false
+    },
+    {
+      "id": "cockpit",
+      "dest": "cockpit",
+      "repo": "mmb-cockpit",
+      "local_path": "mmb-cockpit",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": true
+    },
+    {
+      "id": "aquarium",
+      "dest": "aquarium",
+      "repo": "mmb-aquarium",
+      "local_path": "mmb-aquarium",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": true
+    },
+    {
+      "id": "logger",
+      "dest": "logger",
+      "repo": "mmb-logger",
+      "local_path": "mmb-logger",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": true
+    }
+  ]
+}
+JSON
 
   echo "# stub" > "$_SANDBOX_TOOLING/profiles/master.md"
   echo "# stub" > "$_SANDBOX_TOOLING/profiles/project-orchestrator.md"
