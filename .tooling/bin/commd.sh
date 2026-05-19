@@ -26,6 +26,22 @@ set -euo pipefail
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/lib/targets.sh"
+
+# Eager load do registry de targets (.tooling/targets.json). Aborta o
+# commd antes de criar inboxes / iniciar inotify se o registry estiver
+# inválido — falha cedo, log claro, em vez de comportamento esquisito
+# mais tarde.
+mmb_targets_load || {
+  echo "ERRO: registry de targets inválido (ver stderr acima). Abortando commd." >&2
+  exit 2
+}
+
+# Cache da lista de dests com padding pra word-match em case (hot path
+# do dispatch). Atualiza só no startup do commd; mudanças em targets.json
+# durante execução exigem restart.
+_MMB_COMMD_DESTS_PADDED=" $(mmb_dests_list) "
 
 # Paths globais. Em modo teste (_MMB_TEST_MODE=1), preserve qualquer
 # valor já setado pelo caller — permite sandbox hermético sem tocar
@@ -55,7 +71,7 @@ mkdir -p "$STATE_DIR" "$LOG_DIR/workers"
 # Cria inboxes + subdirs de lifecycle idempotente. Subdirs começam
 # com "." para não competir com .lock/.gitkeep no top-level e para
 # que find -name '.*' não as confunda com mensagens.
-for d in master core cockpit aquarium logger; do
+for d in $(mmb_dests_list); do
   mkdir -p "$INBOX_BASE/$d" \
            "$INBOX_BASE/$d/.processing" \
            "$INBOX_BASE/$d/.done" \
@@ -75,9 +91,9 @@ log() {
 #   key=val: extras. Auto-detecta numérico vs string e quota
 #   apropriadamente pra produzir JSON válido. Strings com aspas são
 #   escapadas. Ex.:
-#     journal commd-worker-timeout core msg.md timeout_seconds=600
+#     journal commd-worker-timeout cockpit msg.md timeout_seconds=600
 #       → ..."timeout_seconds":600
-#     journal commd-worker-timeout core msg.md sev=error epic=ux-refresh-v07
+#     journal commd-worker-timeout cockpit msg.md sev=error epic=ux-refresh-v07
 #       → ..."sev":"error","epic":"ux-refresh-v07"
 journal() {
   local event="$1" dest="$2" basename="$3"
@@ -185,9 +201,9 @@ dispatch() {
   local basename
   basename=$(basename "$file")
 
-  # Filtros
-  case "$dest" in
-    master|core|cockpit|aquarium|logger) ;;
+  # Filtros — lista de dests vem do registry (cache _MMB_COMMD_DESTS_PADDED).
+  case "$_MMB_COMMD_DESTS_PADDED" in
+    *" $dest "*) ;;
     *) log "skip: dest desconhecido em '$file' (dest=$dest)"; return ;;
   esac
   # Arquivos ocultos = infra (.lock, .gitkeep, etc)
@@ -269,7 +285,7 @@ dispatch() {
 # no mesmo arquivo.
 reconcile_once() {
   local d f basename
-  for d in master core cockpit aquarium logger; do
+  for d in $(mmb_dests_list); do
     while IFS= read -r -d '' f; do
       basename=$(basename "$f")
       case "$basename" in .*) continue ;; esac
@@ -295,7 +311,7 @@ reconcile_once() {
 watchdog_check() {
   local now=$(date +%s)
   local d hb hb_mod hb_age
-  for d in master core cockpit aquarium logger; do
+  for d in $(mmb_dests_list); do
     hb="$STATE_DIR/heartbeat-${d}.txt"
     [ -f "$hb" ] || continue
     hb_mod=$(stat -c %Y "$hb" 2>/dev/null || echo "$now")
@@ -362,7 +378,9 @@ run_foreground() {
 
   log "================================================================"
   log "commd iniciado (pid=$$ mode=$MMB_MODE)"
-  log "  watching: $INBOX_BASE/{master,core,cockpit,aquarium,logger}/"
+  local _watching_csv
+  _watching_csv=$(mmb_dests_list | tr ' ' ',')
+  log "  watching: $INBOX_BASE/{$_watching_csv}/"
   log "  logs:     $LOG_DIR/workers/<dest>.log"
   log "================================================================"
 
@@ -374,7 +392,7 @@ run_foreground() {
   # excluir os subdirs de lifecycle), maxdepth=1 em cada.
   log "drain inicial..."
   local count=0
-  for d in master core cockpit aquarium logger; do
+  for d in $(mmb_dests_list); do
     while IFS= read -r f; do
       [ -z "$f" ] && continue
       dispatch "$f"
@@ -404,6 +422,14 @@ run_foreground() {
     log "poll: desabilitado (MMB_COMMD_POLL_INTERVAL=0)"
   fi
 
+  # Monta os paths de inbox/<dest>/ dinamicamente a partir do registry.
+  # `mmb_dests_list` já inclui `master` como role fixa.
+  local INOTIFY_PATHS=()
+  local _d
+  for _d in $(mmb_dests_list); do
+    INOTIFY_PATHS+=("$INBOX_BASE/$_d")
+  done
+
   local path="" rc=0
   while :; do
     if [ "$poll_interval" -gt 0 ]; then
@@ -430,11 +456,7 @@ run_foreground() {
     inotifywait -m -q \
       -e create,moved_to \
       --format '%w%f' \
-      "$INBOX_BASE"/master \
-      "$INBOX_BASE"/core \
-      "$INBOX_BASE"/cockpit \
-      "$INBOX_BASE"/aquarium \
-      "$INBOX_BASE"/logger
+      "${INOTIFY_PATHS[@]}"
   )
 }
 
