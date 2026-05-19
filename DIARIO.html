@@ -217,6 +217,14 @@
 
   <h2>Entries</h2>
   <ul>
+    <li><a href="#v0-12-0">v0.12.0 — Alinhamento conceitual pós-mmb-core</a>
+      <ul>
+        <li><a href="#v0-12-0-saldo" class="sub">Saldo</a></li>
+        <li><a href="#v0-12-0-mudancas" class="sub">O que mudou</a></li>
+        <li><a href="#v0-12-0-aprendizado" class="sub">O que aprendemos</a></li>
+        <li><a href="#v0-12-0-debitos" class="sub">Débitos abertos</a></li>
+      </ul>
+    </li>
     <li><a href="#v0-11-0">v0.11.0 — Captura de modelo por ciclo</a>
       <ul>
         <li><a href="#v0-11-0-saldo" class="sub">Saldo</a></li>
@@ -311,6 +319,196 @@
     <li><strong>Não:</strong> diário de conversa, atualização contínua
       por commit, registro de cada bug. Para isso, há outras peças.</li>
   </ul>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+
+<section class="entry" id="v0-12-0">
+  <h2>v0.12.0 — Alinhamento conceitual pós-mmb-core</h2>
+  <div class="meta">
+    <span class="tag">v0.12.0</span> 2026-05-18 ·
+    pós-tag <code>v0.11.0</code> · sessão 2026-05-18
+  </div>
+
+  <p>
+    Marco não-funcional: refactor dos docs canônicos do andaime e
+    dos <code>CLAUDE.md</code>s depois que <code>mmb-core</code>
+    saiu das listas vivas. Sem mudança de runtime; sem refactor
+    Master → Planner (adiado conscientemente). A entrega é
+    <strong>coerência conceitual</strong>: o método deixa de ser
+    descrito como "andaime que coordena 3 repos do MMB" e passa a
+    ser "runtime que opera sobre <strong>targets registrados</strong>".
+    Targets atuais são internos por coincidência histórica; o próprio
+    andaime é tratado como target especial.
+  </p>
+
+  <h3 id="v0-12-0-saldo">Saldo</h3>
+  <div class="saldo">
+    <strong>4 commits</strong> no <code>mmb-andaime</code> +
+    <strong>1 commit</strong> no <code>mmb-logger</code> +
+    <strong>1 commit</strong> no <code>mmb-cockpit</code><br>
+    Refactor de docs fora do fluxo do andaime (decisão consciente):
+    <strong>0 PRs, 0 issues</strong>, edição direta do Master sob
+    aviso explícito ao Rick<br>
+    Testes verdes: <code>bash -n</code> em 5 scripts ·
+    <code>pytest -q</code> no logger (209/209) ·
+    <code>vitest</code> no cockpit (69/69, mocks intactos)
+  </div>
+
+  <h3 id="v0-12-0-mudancas">O que mudou de fato</h3>
+  <ul>
+    <li>
+      <code>mmb-core</code> removido das listas vivas — scripts
+      operacionais (<code>reset-all.sh</code>, <code>worker.sh</code>,
+      <code>create-task-issue.sh</code>, <code>mmb</code>,
+      <code>up.sh</code>), docs canônicas (<code>protocol.md</code>,
+      <code>README.md</code>, <code>profiles/*</code>,
+      <code>guardrails.md</code>, <code>source-of-truth.md</code>,
+      <code>templates/master-briefing.md</code>) e
+      <code>gh.py</code> do logger. Resíduos confinados a fixtures
+      de teste e docs históricas, mantidos como decisão consciente.
+    </li>
+    <li>
+      <code>CLAUDE.md</code> raiz reescrito como Nível 3
+      (108 → 61 linhas): ponteiros + identidade do Master + tabela
+      de targets registrados (<code>mmb-cockpit</code>,
+      <code>mmb-aquarium</code>, <code>mmb-logger</code> internos +
+      <code>mmb-andaime</code> como target especial). Contradição
+      "Mestre cria issue" resolvida.
+    </li>
+    <li>
+      <code>protocol.md</code> recebeu callouts <code>v0.3+</code>
+      em §<code>Polling-on-every-turn</code> e §<code>O ping</code>
+      desambiguando por papel — Master interativo e atômicos vivos
+      fazem polling; workers stateless são acordados pelo
+      <code>commd</code> via <code>inotifywait</code>, sem polling.
+    </li>
+    <li>
+      <code>mmb-cockpit/CLAUDE.md</code> reescrito (97 → 70 linhas)
+      reconhecendo <strong>3 modos</strong> de sessão: (1) atômico
+      via andaime, (2) worker stateless via andaime, (3) sessão
+      manual local. <code>docs/ORQUESTRADOR.md</code> e
+      <code>docs/tasks/PROTOCOLO.md</code> preservados intactos —
+      seguem autoritativos para o modo manual (importados do
+      <code>mr-meeseeks-box</code>, independentes do andaime).
+    </li>
+    <li>
+      Exemplos didáticos implausíveis após a substituição mecânica
+      <code>core</code> → <code>cockpit</code> ("limpar
+      scripts/task-*.sh do <code>mmb-cockpit</code>") reescritos
+      para cenário plausível "adicionar coluna <code>model</code> em
+      <code>CiclosTable</code>", com slug <code>model-column</code>
+      consistente em todos os pontos.
+    </li>
+  </ul>
+
+  <h3 id="v0-12-0-aprendizado">O que aprendemos</h3>
+  <ul>
+    <li>
+      <strong>"Operar sobre targets" &gt; "coordenar repos do MMB".</strong>
+      O framing antigo amarrava a arquitetura ao registry atual; o
+      framing agnóstico libera o método pra operar futuramente sobre
+      projetos externos sem refazer docs ou prompts. Implementação
+      (registry dinâmico) fica como horizonte; o vocabulário precede
+      o código.
+    </li>
+    <li>
+      <strong>Callout <code>&gt; v0.3+:</code> &gt; nota "OBSOLETO"
+      inline.</strong> Texto histórico marcado dentro do corpo de
+      uma seção confunde o leitor sequencial mesmo com aviso.
+      Callout no topo da seção funciona melhor — o leitor sai com
+      modelo mental atual sem perder a referência histórica.
+    </li>
+    <li>
+      <strong>Substituição mecânica em exemplos didáticos não basta.</strong>
+      Trocar <code>mmb-core</code> por <code>mmb-cockpit</code> num
+      walkthrough sobre "limpar scripts/task-*.sh" produz cenário
+      tecnicamente implausível (cockpit é React/TS, não tem esses
+      scripts). Revisar o cenário inteiro, não só o nome do repo.
+    </li>
+  </ul>
+
+  <h3 id="v0-12-0-debitos">Débitos abertos</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Débito</th>
+        <th>Gatilho pra atacar</th>
+        <th class="center">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <strong>Registry dinâmico de targets</strong>: hoje incluir
+          novo target exige edição cirúrgica em ~6 pontos
+          (<code>worker.sh</code>, <code>mmb</code>,
+          <code>reset-all.sh</code>, <code>create-task-issue.sh</code>,
+          <code>gh.py</code> do logger, <code>protocol.md</code>).
+          Hardcodes marcados conceitualmente como "registry atual",
+          mas não centralizados em um arquivo único.
+        </td>
+        <td>
+          Surgir o primeiro target externo (projeto fora do ecossistema
+          MMB). Antes disso, otimizar é especulativo.
+        </td>
+        <td class="center"><span class="badge warn">horizonte</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Refactor Master → Planner</strong>: Master deixa
+          de escrever prompt detalhado, Planner (orq local) ganha
+          fase autoral com conhecimento íntimo do código do target.
+          Discutido nesta janela; adiado.
+        </td>
+        <td>
+          Briefing técnico do Master se mostrar insuficiente
+          empiricamente (atômico perguntando, ou PR exigindo refactor
+          pós-merge por escolha subótima). Sem trigger empírico
+          observado até aqui.
+        </td>
+        <td class="center"><span class="badge warn">adiado</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Mocks do cockpit com <code>mmb-core</code></strong>:
+          9 ciclos + 2 épicos referenciam mmb-core em
+          <code>projetos.ts</code>, <code>ciclos.ts</code>,
+          <code>epicos.ts</code>. Limpeza exigiria refactor cascateado
+          em 5 fixtures + ajuste em <code>DashboardPage.test.tsx</code>
+          que asserta <code>"23 ciclos"</code>.
+        </td>
+        <td>
+          Próxima rodada dedicada a atualizar os mocks do cockpit
+          (épico de UI ou de contrato novo do logger).
+        </td>
+        <td class="center"><span class="badge warn">débito</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Docs untracked da raiz</strong>
+          (<code>MMB-ONBOARDING.md</code>,
+          <code>MMB-DISCUSSIONS.md</code>,
+          <code>MMB-ANATOMIA*.html</code>,
+          <code>MMB-TESTAMENTO.html</code>,
+          <code>MMB-CHANNELS-DISCOVERY.md</code>): competem por
+          gravidade conceitual com <code>.tooling/</code>.
+        </td>
+        <td>
+          Decisão pessoal do Rick (arquivar, absorver em
+          <code>.tooling/</code>, ou apagar) — fora do andaime.
+        </td>
+        <td class="center"><span class="badge warn">manual</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top: 32px; color: var(--fg-dim); font-size: 14px;">
+    Tag git: <code>v0.12.0</code> ainda não foi criada — esta entry
+    documenta o checkpoint de alinhamento conceitual pós-remoção do
+    <code>mmb-core</code>. Selada quando o Rick rodar
+    <code>git tag -a v0.12.0</code>.
+  </p>
 </section>
 
 <!-- ──────────────────────────────────────────────────────────── -->
