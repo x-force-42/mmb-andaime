@@ -39,6 +39,19 @@
       "requires_github": true,
       "kind": "internal",
       "managed_by_reset": true
+    },
+    {
+      "id": "campo-premiado",
+      "dest": "campo-premiado",
+      "repo": "campo-premiado",
+      "local_path": "/home/eliezer/vnt/ASUS/campo-premiado",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": false,
+      "owner": "x-force-42",
+      "requires_github": true,
+      "kind": "external",
+      "managed_by_reset": false
     }
   ]
 }

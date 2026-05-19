@@ -22,13 +22,27 @@ MMB_ROOT="$(dirname "$TOOLING_DIR")"
 
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/lib/targets.sh"
+mmb_targets_load || {
+  echo "ERRO: registry de targets inválido. Abortando task-end." >&2
+  exit 2
+}
 
 if [ -z "$REPO" ] || [ -z "$TASK_ID" ]; then
   echo "Uso: $0 <repo> <task-id>"
   exit 1
 fi
 
-REPO_PATH="$MMB_ROOT/$REPO"
+# Resolve REPO_PATH via registry (suporta local_path absoluto para target
+# externo fora de MMB_ROOT). Fallback retro-compat para repos não-registrados.
+REPO_SHORT="${REPO#mmb-}"
+if mmb_target_exists "$REPO_SHORT" && [ "$(mmb_target_repo "$REPO_SHORT")" = "$REPO" ]; then
+  REPO_PATH=$(mmb_target_path "$REPO_SHORT")
+else
+  REPO_PATH="$MMB_ROOT/$REPO"
+fi
+
 if [ ! -d "$REPO_PATH/.git" ]; then
   echo "ERRO: $REPO não é um repo git em $REPO_PATH."
   exit 1

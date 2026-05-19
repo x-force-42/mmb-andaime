@@ -20,18 +20,33 @@ TASK_ID="${2:-}"
 # Localiza a raiz do MMB (parente do .tooling/)
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MMB_ROOT="$(dirname "$TOOLING_DIR")"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/lib/targets.sh"
+mmb_targets_load || {
+  echo "ERRO: registry de targets inválido. Abortando task-start." >&2
+  exit 2
+}
 
 if [ -z "$REPO" ] || [ -z "$TASK_ID" ]; then
   echo "Uso: $0 <repo> <task-id>"
   echo
-  echo "Repos disponíveis:"
-  for d in "$MMB_ROOT"/mmb-*; do
-    [ -d "$d/.git" ] && echo "  - $(basename "$d")"
+  echo "Repos disponíveis (do registry):"
+  for _id in $(mmb_targets_list); do
+    echo "  - $(mmb_target_repo "$_id")"
   done
   exit 1
 fi
 
-REPO_PATH="$MMB_ROOT/$REPO"
+# Resolve REPO_PATH via registry (suporta local_path absoluto pra target
+# externo fora de MMB_ROOT). REPO arg é o nome full (ex.: mmb-cockpit,
+# campo-premiado). Fallback retro-compat: $MMB_ROOT/$REPO se não estiver
+# no registry (mantém compatibilidade com repos não-registrados em dev).
+REPO_SHORT="${REPO#mmb-}"
+if mmb_target_exists "$REPO_SHORT" && [ "$(mmb_target_repo "$REPO_SHORT")" = "$REPO" ]; then
+  REPO_PATH=$(mmb_target_path "$REPO_SHORT")
+else
+  REPO_PATH="$MMB_ROOT/$REPO"
+fi
 
 if [ ! -d "$REPO_PATH/.git" ]; then
   echo "ERRO: $REPO não é um repo git em $REPO_PATH."

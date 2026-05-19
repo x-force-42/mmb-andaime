@@ -38,6 +38,13 @@ set -euo pipefail
 TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/config.sh"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/lib/targets.sh"
+mmb_targets_load || {
+  echo "ERRO: registry de targets inválido. Abortando msg.sh." >&2
+  exit 2
+}
+_MMB_DESTS_PADDED=" $(mmb_dests_list) "
 
 # Parsing de flags: --allow-offline em qualquer posição é extraído;
 # o restante vira positional. Env MMB_ALLOW_OFFLINE_ENQUEUE=1 também
@@ -77,9 +84,9 @@ EOF
 fi
 
 # Validação dura de campos
-case "$TO" in
-  master|core|cockpit|aquarium|logger) ;;
-  *) echo "ERRO: 'to' inválido: $TO (use master|core|cockpit|aquarium|logger)" >&2; exit 2;;
+case "$_MMB_DESTS_PADDED" in
+  *" $TO "*) ;;
+  *) echo "ERRO: 'to' inválido: $TO (válidos:$_MMB_DESTS_PADDED)" >&2; exit 2;;
 esac
 
 case "$TYPE" in

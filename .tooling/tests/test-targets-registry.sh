@@ -119,8 +119,10 @@ total_repos=$(printf '%s\n' $repos | wc -l)
 
 # ─── Grupo 4: consistência com filesystem ──────────────────────
 
+# Usa mmb_target_path (não MMB_ROOT/$lp literal) para suportar local_path
+# absoluto — necessário para targets externos (kind=external/external-fake).
 for id in $ids; do
-  lp="$MMB_ROOT/$(mmb_target_field "$id" local_path)"
+  lp=$(mmb_target_path "$id")
   [ -d "$lp/.git" ] \
     || fail "local_path/.git existe" "$id: $lp/.git ausente"
 done
@@ -128,17 +130,25 @@ pass "local_path/.git existe para todos os targets"
 
 # ─── Grupo 5: semântica vs estado atual ────────────────────────
 
-expected_targets=$(echo "cockpit aquarium logger" | tr ' ' '\n' | sort | tr '\n' ' ')
-actual_targets=$(mmb_targets_list | tr ' ' '\n' | sort | tr '\n' ' ')
-[ "$expected_targets" = "$actual_targets" ] \
-  && pass "mmb_targets_list == {cockpit, aquarium, logger}" \
-  || fail "mmb_targets_list == {cockpit, aquarium, logger}" "achei: $actual_targets"
+# Sanity: lista contém os 3 internos atuais (cockpit/aquarium/logger).
+# Targets externos adicionais são aceitos — só checamos os mínimos.
+actual_targets=" $(mmb_targets_list) "
+for required in cockpit aquarium logger; do
+  case "$actual_targets" in
+    *" $required "*) ;;
+    *) fail "mmb_targets_list contém $required" "achei: $actual_targets" ;;
+  esac
+done
+pass "mmb_targets_list contém cockpit, aquarium, logger (atuais: $(echo $actual_targets))"
 
-expected_dests=$(echo "master cockpit aquarium logger" | tr ' ' '\n' | sort | tr '\n' ' ')
-actual_dests=$(mmb_dests_list | tr ' ' '\n' | sort | tr '\n' ' ')
-[ "$expected_dests" = "$actual_dests" ] \
-  && pass "mmb_dests_list == {master, cockpit, aquarium, logger}" \
-  || fail "mmb_dests_list == {master, cockpit, aquarium, logger}" "achei: $actual_dests"
+actual_dests=" $(mmb_dests_list) "
+for required in master cockpit aquarium logger; do
+  case "$actual_dests" in
+    *" $required "*) ;;
+    *) fail "mmb_dests_list contém $required" "achei: $actual_dests" ;;
+  esac
+done
+pass "mmb_dests_list contém master + 3 internos (atuais: $(echo $actual_dests))"
 
 if printf '%s\n%s\n' "$actual_targets" "$actual_dests" | grep -qw core; then
   fail "regressão guard: 'core' ausente das listas" "achei 'core' em targets ou dests"
