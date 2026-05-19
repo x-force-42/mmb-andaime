@@ -562,10 +562,212 @@
     </tbody>
   </table>
 
+  <h3 id="v0-14-0-addendum">Addendum: marco do primeiro target externo
+    encerrado (mesmo dia, pós-smoke)</h3>
+  <p>
+    Após o smoke da Fase 2 fechar com PR #2, o
+    <code>campo-premiado</code> foi exercitado como target externo
+    real, ponta-a-ponta, em <strong>5 épicos adicionais</strong> no
+    mesmo dia (2 deles no <code>mmb-logger</code> pra fortificar o que
+    o uso revelou). O ciclo completo briefing → dispatch → issue →
+    atomic → PR → merge → reconcile rodou repetidamente e o cockpit
+    passou a mostrar custo/modelo/tokens reais do trabalho.
+  </p>
+
+  <h4>Épicos extras fechados (todos mergeados)</h4>
+  <table>
+    <thead>
+      <tr><th>Épico</th><th>Repo</th><th>PR</th><th>Suíte</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>retro-i18n-pt</code></td>
+        <td><code>campo-premiado</code></td>
+        <td>#4</td>
+        <td>122/122</td>
+      </tr>
+      <tr>
+        <td><code>grid-fullscreen</code></td>
+        <td><code>campo-premiado</code></td>
+        <td>#6</td>
+        <td>123/123</td>
+      </tr>
+      <tr>
+        <td><code>unique-master-icon</code></td>
+        <td><code>campo-premiado</code></td>
+        <td>#8</td>
+        <td>139/139</td>
+      </tr>
+      <tr>
+        <td><code>logger-external-target-transcripts</code></td>
+        <td><code>mmb-logger</code></td>
+        <td>#26</td>
+        <td>230/230</td>
+      </tr>
+      <tr>
+        <td><code>logger-model-fallback-transcripts</code></td>
+        <td><code>mmb-logger</code></td>
+        <td>#28</td>
+        <td>230/230</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4>Bugs sistêmicos revelados pelo uso real e corrigidos</h4>
+  <ul>
+    <li>
+      <strong><code>find_transcripts</code> assumindo
+      <code>&lt;mmb_root&gt;/&lt;repo&gt;/.worktrees/...</code></strong>
+      (PR #26): worktrees de target externo viviam em
+      <code>local_path</code> absoluto fora de <code>$MMB_ROOT</code>,
+      então a derivação de path quebrava. Fix consulta
+      <code>load_targets()</code> e usa <code>target.local_path</code>
+      quando o repo casa com algum target registrado; fallback
+      retrocompat preservado.
+    </li>
+    <li>
+      <strong><code>load_planner_models</code> obsoleto pós workers
+      stateless</strong> (PR #28): a derivação de <code>ciclos.model</code>
+      filtrava eventos <code>spawn</code> com <code>id</code> igual ao
+      planner pré-v0.3, mas os workers stateless emitem
+      <code>id=&lt;target&gt;-w-&lt;pid&gt;</code>. Bug
+      <strong>universal</strong>: 60 ciclos recentes com
+      <code>model=NULL</code> em todos os projetos. Fix introduz
+      fallback explícito pra <code>cost_result.model</code> (dominante
+      via <code>model_counts</code>) e warning
+      <code>model-not-derivable</code> quando ciclo <code>completo</code>
+      fica sem model derivável. Reconcile pós-merge derrubou NULL de
+      60 → 32 (31 são <code>abortado</code> NULL legítimo + 1 é
+      ciclo histórico do <code>mmb-core</code> descontinuado).
+    </li>
+  </ul>
+
+  <h4>Custo real do dia no <code>campo-premiado</code></h4>
+  <table>
+    <thead>
+      <tr><th>Ciclo</th><th>Modelo</th><th>Tokens in/out</th><th>USD</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>external-target-smoke-test</code></td><td>opus-4-7</td><td>1.556.251 / 12.934</td><td>$4.84</td></tr>
+      <tr><td><code>retro-i18n-pt</code></td><td>opus-4-7</td><td>3.265.790 / 119.374</td><td>$25.18</td></tr>
+      <tr><td><code>grid-fullscreen</code></td><td>opus-4-7</td><td>4.458.176 / 36.603</td><td>$14.28</td></tr>
+      <tr><td><code>unique-master-icon</code></td><td>sonnet-4-6</td><td>4.992.101 / 93.737</td><td>$4.13</td></tr>
+      <tr><td colspan="3" style="text-align:right;"><strong>Total</strong></td><td><strong>$48.42</strong></td></tr>
+    </tbody>
+  </table>
+  <p>
+    O <code>unique-master-icon</code> rodou em <code>sonnet-4-6</code>
+    porque o <code>spawn-atomic.sh</code> falhou em criar pane na
+    sessão tmux <code>mmb</code> (débito de portabilidade), e o
+    atomic foi spawnado manualmente pelo Rick com
+    <code>claude --dangerously-skip-permissions</code> sem
+    <code>--model</code> — pegou o default. Captura útil sobre como o
+    fallback de modelo dos transcripts revela escolha real, não
+    declaração.
+  </p>
+
+  <h4>Resolução de débitos abertos antes do dia</h4>
+  <ul>
+    <li>
+      <strong>"<code>tracked_by_logger: true</code> em target externo"</strong>
+      (<span class="badge warn">design</span> na tabela acima): resolvido
+      durante a sessão. Flag virada em
+      <code>.tooling/targets.json</code> e dois PRs no
+      <code>mmb-logger</code> (#26 e #28) cobriram os caminhos quebrados
+      de transcripts e model. Não exigiu mudança de schema do logger
+      além das colunas derivadas já existentes.
+    </li>
+  </ul>
+
+  <h4>Débitos novos abertos durante o dia (registrados, não atacados)</h4>
+  <p>
+    Eixo único: <strong>propagação/portabilidade do andaime quando
+    operando target externo</strong>. Resolução adiada — sem briefing
+    aberto agora.
+  </p>
+  <ul>
+    <li><code>e-2026-05-19-003</code>:
+      <code>open-pr.sh</code>/<code>agents.sh heartbeat</code> ausentes
+      na worktree do atomic externo (PR aberto via
+      <code>gh pr create</code> direto, pings <code>pr-aberto</code>/
+      <code>task-fechada</code> não emitidos).</li>
+    <li><code>e-2026-05-19-004</code>:
+      <code>suite_status</code> fora do schema enumerado.</li>
+    <li><code>e-2026-05-19-005</code>:
+      <code>pr_url</code> prefixado <code>mmb-</code> indevidamente
+      por template.</li>
+    <li><code>e-2026-05-19-006</code>: PR usou
+      <code>Closes &lt;owner&gt;/&lt;repo&gt;#N</code> (cross-repo),
+      regex do reconcile (<code>_CLOSES_RE</code>) não captura — link
+      PR↔issue ficou órfão. Mitigado manualmente neste épico via
+      append de <code>Closes #N</code> simples no PR body + reconcile.</li>
+    <li><code>e-2026-05-19-007</code>: transcripts do atomic não
+      chegam ao path esperado do logger (mesma raiz do PR #26 mas
+      atinge outros sinais).</li>
+    <li><code>e-2026-05-19-008</code>: <code>commd</code> dispara
+      múltiplos workers em paralelo no mesmo arquivo de inbox
+      (3× observado em briefings/status do dia). Idempotência via
+      <code>mmb-cycle-key</code> salva de duplicação de issues/PRs,
+      mas é desperdício de tokens <code>claude -p</code> e race
+      condition latente em ações não-idempotentes.</li>
+    <li><code>e-2026-05-19-009</code>: <code>spawn-atomic.sh</code>
+      do orq não consegue criar atomic em sessão tmux ausente —
+      retomada manual exigida.</li>
+    <li><code>e-2026-05-19-010</code>: prompt do
+      <code>spawn-atomic.sh:144</code> hardcoda
+      <code>/MMB/.tooling/...</code>, assumindo symlink
+      <code>/MMB → $MMB_ROOT</code> que pode não existir na máquina.</li>
+    <li><code>e-2026-05-19-011</code>: resolvido pelo PR #28 (model
+      fallback). Mantido no journal como referência histórica.</li>
+  </ul>
+
+  <h4>Cleanup pós-merge concluído</h4>
+  <p>
+    Sob aprovação explícita do Rick, escopo dry-run revisado antes de
+    executar. Após o último merge:
+  </p>
+  <ul>
+    <li><code>campo-premiado</code>: removida worktree
+      <code>.worktrees/T1-unique-master-icon</code>, deletada branch
+      local <code>task/T1-unique-master-icon</code>, deletadas 3
+      branches remotas (<code>T1-retro-i18n-pt</code>,
+      <code>T2-grid-fullscreen</code>, <code>T1-unique-master-icon</code>)
+      — a quarta (<code>T1-external-test</code>) já tinha sido deletada
+      upstream pelo <code>gh</code> ao mergear o PR #2.</li>
+    <li><code>mmb-logger</code>: removidas 2 worktrees
+      (<code>L5-logger-external-target-transcripts</code>,
+      <code>L6-logger-model-fallback-transcripts</code>), deletadas 2
+      branches locais e 3 remotas (as duas da sessão + órfã
+      <code>L5-reconcile-archive-fallback</code> que era resíduo da
+      sessão anterior).</li>
+  </ul>
+
+  <h4>Estado final limpo</h4>
+  <ul>
+    <li>Ambos os repos: <code>git worktree list</code> só com
+      <code>main</code>; <code>git branch --list 'task/*'</code> e
+      <code>origin/task/*</code> vazios após <code>fetch -p</code>.</li>
+    <li>Reconcile rodado após cleanup mantém os 4 ciclos do
+      <code>campo-premiado</code> populados (idempotência do PR #28
+      confirmada). Total real preservado: <strong>$48.42</strong>.</li>
+    <li>Apenas 1 ciclo <code>completo</code> com <code>model NULL</code>
+      em 7 dias: <code>cleanup-task-scripts__core__2026-05-14</code>
+      (<code>mmb-core</code> descontinuado, fora do loop atual de
+      reconcile — NULL honesto residual).</li>
+    <li><code>commd</code> rodando (pid persistente via
+      <code>nohup</code> ainda em background).</li>
+  </ul>
+
   <p style="margin-top: 32px; color: var(--fg-dim); font-size: 14px;">
     Tag git: <code>v0.14.0</code> selada com o push da fase.
     Smoke da Fase 2 concluído: o andaime opera sobre target externo
     real fora de <code>$MMB_ROOT</code> via registry declarativo.
+    <strong>Marco do primeiro target externo encerrado em 2026-05-19</strong>
+    com 6 PRs mergeados (1 do smoke + 3 de produto no
+    <code>campo-premiado</code> + 2 de fortificação no
+    <code>mmb-logger</code>), $48.42 de custo real medido via
+    reconcile, e 9 débitos sistêmicos registrados (1 já resolvido,
+    8 acumulados pra rodada de fortificação dedicada).
   </p>
 </section>
 
