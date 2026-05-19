@@ -217,6 +217,15 @@
 
   <h2>Entries</h2>
   <ul>
+    <li><a href="#v0-14-0">v0.14.0 — Primeiro target externo real</a>
+      <ul>
+        <li><a href="#v0-14-0-saldo" class="sub">Saldo</a></li>
+        <li><a href="#v0-14-0-mudancas" class="sub">O que mudou</a></li>
+        <li><a href="#v0-14-0-prova" class="sub">Prova ponta-a-ponta</a></li>
+        <li><a href="#v0-14-0-bugs" class="sub">Bugs corrigidos</a></li>
+        <li><a href="#v0-14-0-debitos" class="sub">Débitos abertos</a></li>
+      </ul>
+    </li>
     <li><a href="#v0-13-0">v0.13.0 — Target Registry Rollout (Fase 1)</a>
       <ul>
         <li><a href="#v0-13-0-saldo" class="sub">Saldo</a></li>
@@ -326,6 +335,238 @@
     <li><strong>Não:</strong> diário de conversa, atualização contínua
       por commit, registro de cada bug. Para isso, há outras peças.</li>
   </ul>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+
+<section class="entry" id="v0-14-0">
+  <h2>v0.14.0 — Primeiro target externo real</h2>
+  <div class="meta">
+    <span class="tag">v0.14.0</span> 2026-05-19 ·
+    pós-tag <code>v0.13.0</code> · sessão 2026-05-19
+  </div>
+
+  <p>
+    Fecha a Fase 2 do Target Registry Rollout: o andaime opera
+    pela primeira vez sobre um target externo real
+    (<code>campo-premiado</code>), com checkout fora de
+    <code>$MMB_ROOT</code> e <code>local_path</code> absoluto. O
+    schema do registry ganha 4 campos opcionais
+    (<code>owner</code>, <code>requires_github</code>,
+    <code>kind</code>, <code>managed_by_reset</code>) e consumidores
+    (shell + Python) passam a honrá-los onde aplicável. Bugs
+    descobertos pelo primeiro path-pattern fora do molde
+    <code>mmb-*</code> dentro de <code>$MMB_ROOT</code> foram
+    corrigidos.
+  </p>
+
+  <h3 id="v0-14-0-saldo">Saldo</h3>
+  <div class="saldo">
+    <strong>4 commits</strong> no <code>mmb-andaime</code> (PRs 2A–2D) +
+    <strong>2 commits</strong> no <code>mmb-logger</code> (PRs 2A–2B) +
+    <strong>1 issue/PR real</strong> em <code>x-force-42/campo-premiado</code>
+    (#1 e #2, fechadas)<br>
+    Testes verdes: <code>test-targets-registry</code> 28/28 ·
+    <code>pytest -q</code> no logger 219/219 · <code>ruff</code> clean ·
+    smoke <code>hardening</code> 40 PASS / M7 baseline conhecido
+    (<code>e-2026-05-19-001</code>)<br>
+    Produção <code>commd</code> intacta ao fim da sessão.
+  </div>
+
+  <h3 id="v0-14-0-mudancas">O que mudou de fato</h3>
+  <ul>
+    <li>
+      <strong>Schema do registry</strong> (PR 2A) ganha 4 campos
+      opcionais explícitos: <code>owner</code> (override per-target,
+      vazio = fallback <code>MMB_GH_OWNER</code>), <code>requires_github</code>
+      (default <code>true</code>), <code>kind</code> (enum
+      <code>internal | external | external-fake</code>),
+      <code>managed_by_reset</code> (proteção do reset destrutivo).
+      Helper Bash detecta <code>local_path</code> absoluto e retorna
+      direto sem prefixar <code>MMB_ROOT</code>. Parser Python
+      espelhado.
+    </li>
+    <li>
+      <strong>Owner per-target em consumidores</strong> (PR 2B):
+      <code>create-task-issue.sh</code>, <code>spawn-atomic.sh</code>,
+      <code>reset-all.sh</code> e <code>mmb-logger reconcile.py</code>
+      resolvem owner via <code>mmb_target_owner</code> com fallback
+      pro global. Comportamento bit-idêntico pros targets internos
+      (todos com <code>owner: "x-force-42"</code>).
+    </li>
+    <li>
+      <strong>Proteção de reset-all</strong> (PR 2C):
+      <code>reset-all.sh</code> filtra REPOS/RESET_IDS por
+      <code>managed_by_reset=true</code>. Targets externos ficam
+      fora das fases destrutivas (GH close, worktree wipe, reset
+      --hard). Log explícito de skipped. Phase 5 (mensageria do
+      andaime) mantida agnóstica.
+    </li>
+    <li>
+      <strong>Roteamento de target externo</strong> (PR 2D): bugs
+      descobertos exercitando o primeiro <code>local_path</code>
+      absoluto — todos do mesmo padrão "Fase 1 não exercitou".
+      Corrigidos: <code>msg.sh</code> validando destinos via
+      registry (e removendo <code>core</code> residual);
+      <code>task-start.sh</code> resolvendo <code>REPO_PATH</code>
+      via <code>mmb_target_path</code>; <code>task-end.sh</code>
+      mesmo bug gêmeo; <code>test-targets-registry.sh</code>
+      grupo 4 usa <code>mmb_target_path</code> em vez de
+      <code>$MMB_ROOT/$lp</code> literal.
+    </li>
+    <li>
+      <strong>Primeiro target externo registrado</strong>:
+      <code>campo-premiado</code> em <code>x-force-42/campo-premiado</code>,
+      <code>local_path: /home/eliezer/vnt/ASUS/campo-premiado</code>
+      (absoluto, fora de <code>$MMB_ROOT</code>), <code>kind: external</code>,
+      <code>managed_by_reset: false</code>, <code>tracked_by_logger:
+      false</code>, <code>requires_github: true</code>.
+    </li>
+  </ul>
+
+  <h3 id="v0-14-0-prova">Prova ponta-a-ponta</h3>
+  <p>
+    Flow real completo executado em <code>x-force-42/campo-premiado</code>:
+  </p>
+  <ul>
+    <li>Briefing master → <code>msg.sh campo-premiado</code> → commd dispatch
+        → worker stateless project-orchestrator com CWD absoluto correto
+        (<code>/home/eliezer/vnt/ASUS/campo-premiado</code>);</li>
+    <li>Orq local rodou <code>create-task-issue.sh</code> → issue #1 OPEN
+        com âncora <code>mmb-cycle-key</code> e labels
+        (<code>task</code>, <code>project:campo-premiado</code>,
+        <code>epic:external-target-smoke-test</code>);</li>
+    <li>Orq tentou <code>spawn-atomic.sh</code>, falhou em
+        <code>task-start.sh</code>, escalou via <code>question</code> ao
+        master (comportamento correto do profile);</li>
+    <li>Master fixou <code>task-start.sh</code>, completou o spawn
+        manualmente, atômico spawnou em worktree
+        <code>.worktrees/T1-external-test</code>;</li>
+    <li>Atômico criou <code>docs/MMB-EXTERNAL-TEST.md</code>, commitou,
+        push da branch, abriu PR #2 com suite verde (122/122) e
+        <code>Closes #1</code>;</li>
+    <li>Status <code>pr-aberto-2</code> fluiu de volta pro master via
+        <code>msg.sh</code>;</li>
+    <li>PR #2 squash-merged, issue #1 fechada automaticamente;</li>
+    <li><code>task-end.sh</code> limpou worktree + branch local +
+        brief untracked.</li>
+  </ul>
+
+  <h3 id="v0-14-0-bugs">Bugs corrigidos</h3>
+  <table>
+    <thead>
+      <tr><th>Bug</th><th>Causa</th><th>Fix</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>msg.sh</code> rejeitou destino <code>campo-premiado</code></td>
+        <td>case literal <code>master|core|cockpit|aquarium|logger</code> — esquecido na Fase 1</td>
+        <td>match dinâmico via <code>_MMB_DESTS_PADDED</code> derivado de <code>mmb_dests_list</code>; remove <code>core</code> residual</td>
+      </tr>
+      <tr>
+        <td><code>task-start.sh</code>: <code>ERRO: campo-premiado não é um repo git em /home/eliezer/llab/MMB/campo-premiado</code></td>
+        <td><code>REPO_PATH="$MMB_ROOT/$REPO"</code> literal, ignora <code>local_path</code> absoluto do registry</td>
+        <td>resolve via <code>mmb_target_path</code> com fallback retrocompatível pro padrão antigo</td>
+      </tr>
+      <tr>
+        <td><code>task-end.sh</code> mesma falha (gêmeo do <code>task-start</code>)</td>
+        <td>idem</td>
+        <td>idem; detectado durante cleanup pós-merge</td>
+      </tr>
+      <tr>
+        <td><code>test-targets-registry.sh</code> grupo 4 falhou na fixture <code>campo-premiado</code></td>
+        <td>assertion derivava <code>$MMB_ROOT/$lp</code> literal</td>
+        <td>usa <code>mmb_target_path</code>; assertivas <code>#13/#14</code> viraram check-mínimos (toleram targets extras)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 id="v0-14-0-debitos">Débitos abertos</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Débito</th>
+        <th>Gatilho pra atacar</th>
+        <th class="center">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <strong>Gates para <code>requires_github: false</code></strong>:
+          <code>create-task-issue.sh</code>, <code>spawn-atomic.sh</code> e
+          <code>send-status-pr-opened.sh</code> ainda crasham se chamados
+          em target sem GitHub. Hoje nenhum target registrado tem
+          <code>requires_github: false</code>; é defensive coding.
+        </td>
+        <td>
+          Aparecer um target real <code>external-fake</code>
+          puramente local (sem GitHub).
+        </td>
+        <td class="center"><span class="badge warn">defer</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong><code>tracked_by_logger: true</code> em target externo</strong>:
+          logger projetaria entries no DB com convenção
+          <code>mmb-&lt;id&gt;</code> mas o target externo tem
+          <code>repo</code> sem prefixo <code>mmb-</code>. Schema
+          de ciclos no logger precisa decidir como tratar.
+        </td>
+        <td>
+          Decisão de produto: o cockpit deve mostrar ciclos de targets
+          externos junto com os internos?
+        </td>
+        <td class="center"><span class="badge warn">design</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Débito M7</strong> (<code>e-2026-05-19-001</code>):
+          smoke <code>commd-poll-recovered em runtime</code> falha
+          determinístico. Pré-existente, não relacionado ao registry.
+        </td>
+        <td>
+          PR específica de diagnóstico (race
+          <code>CONT</code>/<code>reconcile</code>/<code>flock</code>).
+        </td>
+        <td class="center"><span class="badge warn">conhecido</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Fixtures <code>core</code>/<code>mmb-core</code> em
+          <code>tests/</code></strong>: ~169 sítios em
+          <code>mmb-logger/tests/</code> + ~100 em smoke. Cleanup
+          completo fica pra rodada dedicada.
+        </td>
+        <td>
+          PR específica focada em "limpar dest sintético do smoke" e
+          reescrever fixtures do logger.
+        </td>
+        <td class="center"><span class="badge warn">débito</span></td>
+      </tr>
+      <tr>
+        <td>
+          <strong>Labels do método em targets externos</strong>:
+          <code>create-task-issue.sh</code> exige labels
+          <code>task</code>, <code>project:&lt;repo&gt;</code>,
+          <code>epic:&lt;slug&gt;</code> existirem no repo do GH.
+          Pra <code>campo-premiado</code> foram criadas manualmente
+          no smoke. Sem isso, <code>gh issue create</code> falha.
+        </td>
+        <td>
+          Adicionar idempotência: helper que cria labels faltantes
+          on-demand quando target externo é registrado.
+        </td>
+        <td class="center"><span class="badge warn">débito</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top: 32px; color: var(--fg-dim); font-size: 14px;">
+    Tag git: <code>v0.14.0</code> selada com o push da fase.
+    Smoke da Fase 2 concluído: o andaime opera sobre target externo
+    real fora de <code>$MMB_ROOT</code> via registry declarativo.
+  </p>
 </section>
 
 <!-- ──────────────────────────────────────────────────────────── -->
