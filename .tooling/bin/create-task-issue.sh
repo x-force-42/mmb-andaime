@@ -183,13 +183,18 @@ trap 'rm -f "$TMP_BODY"' EXIT
 
 # ── gh issue create ───────────────────────────────────────────────
 
-echo "→ Criando issue em $MMB_GH_OWNER/$REPO" >&2
+# Owner GH per-target (PR 2B). Vem do registry; fallback para
+# MMB_GH_OWNER global se entry com owner vazio.
+TARGET_OWNER=$(mmb_target_owner "$REPO_SHORT")
+GH_FULL="$TARGET_OWNER/$REPO"
+
+echo "→ Criando issue em $GH_FULL" >&2
 echo "  title:      $TITLE" >&2
 echo "  labels:     $LABELS" >&2
 echo "  cycle-key:  $CYCLE_KEY" >&2
 
 if ! ISSUE_URL=$(gh issue create \
-    --repo "$MMB_GH_OWNER/$REPO" \
+    --repo "$GH_FULL" \
     --title "$TITLE" \
     --label "$LABELS" \
     --body-file "$TMP_BODY" 2>&1); then

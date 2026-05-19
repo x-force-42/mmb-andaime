@@ -77,11 +77,16 @@ fi
 # Validação: issue existe e tem as labels esperadas.
 # Usa o jq embutido no gh (--jq) em vez de jq externo — andaime
 # fica self-contained em gh+git+tmux+claude.
-echo "→ Validando issue #$ISSUE em $MMB_GH_OWNER/$REPO..."
-if ! ISSUE_DATA=$(gh issue view "$ISSUE" --repo "$MMB_GH_OWNER/$REPO" \
+# Owner GH per-target (PR 2B). Vem do registry; fallback para
+# MMB_GH_OWNER global se entry com owner vazio.
+TARGET_OWNER=$(mmb_target_owner "$REPO_SHORT")
+GH_FULL="$TARGET_OWNER/$REPO"
+
+echo "→ Validando issue #$ISSUE em $GH_FULL..."
+if ! ISSUE_DATA=$(gh issue view "$ISSUE" --repo "$GH_FULL" \
     --json state,labels,title \
     --jq '[.state, ([.labels[].name] | join(",")), .title] | @tsv' 2>/dev/null); then
-  echo "ERRO: issue #$ISSUE não existe (ou inacessível) em $MMB_GH_OWNER/$REPO." >&2
+  echo "ERRO: issue #$ISSUE não existe (ou inacessível) em $GH_FULL." >&2
   echo "      Orq local precisa criar issue ANTES de spawnar atômico." >&2
   exit 3
 fi
@@ -136,7 +141,7 @@ ATOMIC_FLAGS=$(mmb_claude_flags atomic)
 AGENT_ID="${REPO_SHORT}-${TASK_ID}"
 PARENT_AGENT="$REPO_SHORT"
 
-PROMPT="Você é um Agente Atômico (id: $AGENT_ID). Leia /MMB/.tooling/profiles/atomic-agent.md antes de qualquer coisa. Sua tarefa: $TASK_ID (slug: $SLUG, repo: $REPO). Sua sub-issue é #$ISSUE em $MMB_GH_OWNER/$REPO — leia via: gh issue view $ISSUE --repo $MMB_GH_OWNER/$REPO. O body da issue é o prompt completo da sua execução. Antes de cada commit, rode: /MMB/.tooling/bin/agents.sh heartbeat $AGENT_ID. Quando terminar, abra PR via /MMB/.tooling/bin/open-pr.sh e encerre (o pane fecha sozinho)."
+PROMPT="Você é um Agente Atômico (id: $AGENT_ID). Leia /MMB/.tooling/profiles/atomic-agent.md antes de qualquer coisa. Sua tarefa: $TASK_ID (slug: $SLUG, repo: $REPO). Sua sub-issue é #$ISSUE em $GH_FULL — leia via: gh issue view $ISSUE --repo $GH_FULL. O body da issue é o prompt completo da sua execução. Antes de cada commit, rode: /MMB/.tooling/bin/agents.sh heartbeat $AGENT_ID. Quando terminar, abra PR via /MMB/.tooling/bin/open-pr.sh e encerre (o pane fecha sozinho)."
 
 # Spawn no tmux
 if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; then

@@ -43,6 +43,21 @@ for _id in $(mmb_targets_list); do
 done
 unset _id
 
+# Helper PR 2B: dado um repo do registry, retorna "<owner>/<repo>"
+# usando owner per-target. Fallback para GH_OWNER global se repo
+# desconhecido (defensivo — REPOS vem do registry, deveria sempre achar).
+_resolve_gh_full() {
+  local target_repo="$1"
+  local _id
+  for _id in $(mmb_targets_list); do
+    if [ "$(mmb_target_repo "$_id")" = "$target_repo" ]; then
+      printf '%s/%s\n' "$(mmb_target_owner "$_id")" "$target_repo"
+      return 0
+    fi
+  done
+  printf '%s/%s\n' "$GH_OWNER" "$target_repo"
+}
+
 DRY_RUN=0
 ASSUME_YES=0
 NO_ARCHIVE=0
@@ -142,10 +157,10 @@ phase_inventory() {
       echo "## $repo"
       echo
       echo "### PRs abertos"; echo '```'
-      gh pr list --repo "$GH_OWNER/$repo" --state open --json number,title,headRefName 2>&1 || true
+      gh pr list --repo "$(_resolve_gh_full "$repo")" --state open --json number,title,headRefName 2>&1 || true
       echo '```'; echo
       echo "### Issues abertas"; echo '```'
-      gh issue list --repo "$GH_OWNER/$repo" --state open --json number,title 2>&1 || true
+      gh issue list --repo "$(_resolve_gh_full "$repo")" --state open --json number,title 2>&1 || true
       echo '```'; echo
       echo "### Worktrees"; echo '```'
       git -C "$MMB_ROOT/$repo" worktree list 2>&1 || true
@@ -167,7 +182,8 @@ phase_github_close() {
   local cmt="cleanup/reset do andaime — $TS"
   local pids=()
   for repo in "${REPOS[@]}"; do
-    local full="$GH_OWNER/$repo"
+    local full
+    full=$(_resolve_gh_full "$repo")
     local prs issues
     prs=$(gh pr list --repo "$full" --state open --json number -q '.[].number' 2>/dev/null || echo "")
     issues=$(gh issue list --repo "$full" --state open --json number -q '.[].number' 2>/dev/null || echo "")
@@ -329,8 +345,8 @@ phase_verify() {
   done
   for repo in "${REPOS[@]}"; do
     local prs issues
-    prs=$(gh pr list --repo "$GH_OWNER/$repo" --state open --json number -q 'length' 2>/dev/null || echo "?")
-    issues=$(gh issue list --repo "$GH_OWNER/$repo" --state open --json number -q 'length' 2>/dev/null || echo "?")
+    prs=$(gh pr list --repo "$(_resolve_gh_full "$repo")" --state open --json number -q 'length' 2>/dev/null || echo "?")
+    issues=$(gh issue list --repo "$(_resolve_gh_full "$repo")" --state open --json number -q 'length' 2>/dev/null || echo "?")
     if [ "$prs" != "0" ] || [ "$issues" != "0" ]; then
       ok=0
       echo "  ⚠ $repo GitHub: PRs=$prs issues=$issues"
