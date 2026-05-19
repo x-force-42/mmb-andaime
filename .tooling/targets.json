@@ -8,7 +8,11 @@
       "local_path": "mmb-cockpit",
       "worker_profile": "project-orchestrator.md",
       "agent_layer": "project",
-      "tracked_by_logger": true
+      "tracked_by_logger": true,
+      "owner": "x-force-42",
+      "requires_github": true,
+      "kind": "internal",
+      "managed_by_reset": true
     },
     {
       "id": "aquarium",
@@ -17,7 +21,11 @@
       "local_path": "mmb-aquarium",
       "worker_profile": "project-orchestrator.md",
       "agent_layer": "project",
-      "tracked_by_logger": true
+      "tracked_by_logger": true,
+      "owner": "x-force-42",
+      "requires_github": true,
+      "kind": "internal",
+      "managed_by_reset": true
     },
     {
       "id": "logger",
@@ -26,7 +34,11 @@
       "local_path": "mmb-logger",
       "worker_profile": "project-orchestrator.md",
       "agent_layer": "project",
-      "tracked_by_logger": true
+      "tracked_by_logger": true,
+      "owner": "x-force-42",
+      "requires_github": true,
+      "kind": "internal",
+      "managed_by_reset": true
     }
   ]
 }

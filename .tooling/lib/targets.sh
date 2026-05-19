@@ -40,6 +40,12 @@ declare -A _MMB_TARGET_LOCAL_PATH
 declare -A _MMB_TARGET_WORKER_PROFILE
 declare -A _MMB_TARGET_AGENT_LAYER
 declare -A _MMB_TARGET_TRACKED_BY_LOGGER
+# Campos opcionais (PR 2A — preparação para target externo).
+# String vazia em OWNER significa "use $MMB_GH_OWNER global".
+declare -A _MMB_TARGET_OWNER
+declare -A _MMB_TARGET_REQUIRES_GITHUB
+declare -A _MMB_TARGET_KIND
+declare -A _MMB_TARGET_MANAGED_BY_RESET
 
 # ─── Internals ──────────────────────────────────────────────────
 
@@ -68,9 +74,13 @@ mmb_targets_load() {
     return 1
   fi
 
-  # Parse via python3 → linhas TSV: id<TAB>dest<TAB>repo<TAB>local_path<TAB>worker_profile<TAB>agent_layer<TAB>tracked_by_logger
+  # Parse via python3 → linhas com 11 colunas separadas por \x1F (Unit
+  # Separator, ASCII 0x1F — não-whitespace pra evitar IFS read collapse
+  # de campos vazios consecutivos como tabs causariam):
+  # id  dest  repo  local_path  worker_profile  agent_layer  tracked_by_logger
+  # owner  requires_github  kind  managed_by_reset
   # Validação de tipo + presença feita aqui; validação semântica (unicidade,
-  # filesystem) fica em mmb_targets_validate.
+  # filesystem, kind-enum) fica em mmb_targets_validate.
   local tsv
   if ! tsv=$(python3 - "$_MMB_TARGETS_FILE" <<'PY' 2>&1
 import json, sys
@@ -92,10 +102,14 @@ if not isinstance(targets, list) or not targets:
     print("ERR: targets ausente ou não-array não-vazio", file=sys.stderr); sys.exit(2)
 
 REQUIRED = ("id", "dest", "repo", "local_path", "worker_profile", "agent_layer", "tracked_by_logger")
+OPTIONAL = ("owner", "requires_github", "kind", "managed_by_reset")
+DEFAULTS = {"owner": "", "requires_github": True, "kind": "internal", "managed_by_reset": True}
+KIND_VALUES = ("internal", "external", "external-fake")
+
 for i, t in enumerate(targets):
     if not isinstance(t, dict):
         print(f"ERR: target[{i}] não é objeto", file=sys.stderr); sys.exit(2)
-    extra = set(t) - set(REQUIRED)
+    extra = set(t) - set(REQUIRED) - set(OPTIONAL)
     if extra:
         print(f"ERR: target[{i}] tem campos extras: {sorted(extra)}", file=sys.stderr); sys.exit(2)
     missing = [k for k in REQUIRED if k not in t]
@@ -107,10 +121,36 @@ for i, t in enumerate(targets):
             print(f"ERR: target[{i}].{k} não é string não-vazia ({v!r})", file=sys.stderr); sys.exit(2)
     if not isinstance(t["tracked_by_logger"], bool):
         print(f"ERR: target[{i}].tracked_by_logger não é booleano ({t['tracked_by_logger']!r})", file=sys.stderr); sys.exit(2)
-    # Saída TSV (sem TABs nos valores; garantido pelo schema kebab-case).
-    bool_str = "true" if t["tracked_by_logger"] else "false"
-    print("\t".join((t["id"], t["dest"], t["repo"], t["local_path"],
-                     t["worker_profile"], t["agent_layer"], bool_str)))
+    # Validação dos opcionais quando presentes
+    if "owner" in t:
+        if t["owner"] is None:
+            t = {**t, "owner": ""}
+        elif not isinstance(t["owner"], str):
+            print(f"ERR: target[{i}].owner não é string ou null ({t['owner']!r})", file=sys.stderr); sys.exit(2)
+    if "requires_github" in t and not isinstance(t["requires_github"], bool):
+        print(f"ERR: target[{i}].requires_github não é booleano ({t['requires_github']!r})", file=sys.stderr); sys.exit(2)
+    if "kind" in t:
+        if not isinstance(t["kind"], str) or t["kind"] not in KIND_VALUES:
+            print(f"ERR: target[{i}].kind inválido ({t.get('kind')!r}; use {KIND_VALUES})", file=sys.stderr); sys.exit(2)
+    if "managed_by_reset" in t and not isinstance(t["managed_by_reset"], bool):
+        print(f"ERR: target[{i}].managed_by_reset não é booleano ({t['managed_by_reset']!r})", file=sys.stderr); sys.exit(2)
+
+    # Aplica defaults
+    owner = t.get("owner") if t.get("owner") is not None else DEFAULTS["owner"]
+    requires_github = t.get("requires_github", DEFAULTS["requires_github"])
+    kind = t.get("kind", DEFAULTS["kind"])
+    managed_by_reset = t.get("managed_by_reset", DEFAULTS["managed_by_reset"])
+
+    # Saída com separador \x1F (Unit Separator). Evita colapso de campos
+    # vazios que ocorre com IFS=$'\t' (TAB é whitespace e bash colapsa
+    # whitespace IFS consecutivos).
+    SEP = "\x1f"
+    tbl = "true" if t["tracked_by_logger"] else "false"
+    rg  = "true" if requires_github else "false"
+    mbr = "true" if managed_by_reset else "false"
+    print(SEP.join((t["id"], t["dest"], t["repo"], t["local_path"],
+                    t["worker_profile"], t["agent_layer"], tbl,
+                    owner, rg, kind, mbr)))
 PY
   ); then
     _mmb_targets_err "falha ao parsear targets.json"
@@ -121,12 +161,14 @@ PY
   # Reset caches (idempotente sob re-source).
   _MMB_TARGETS_IDS=""
   unset _MMB_TARGET_DEST _MMB_TARGET_REPO _MMB_TARGET_LOCAL_PATH \
-        _MMB_TARGET_WORKER_PROFILE _MMB_TARGET_AGENT_LAYER _MMB_TARGET_TRACKED_BY_LOGGER
+        _MMB_TARGET_WORKER_PROFILE _MMB_TARGET_AGENT_LAYER _MMB_TARGET_TRACKED_BY_LOGGER \
+        _MMB_TARGET_OWNER _MMB_TARGET_REQUIRES_GITHUB _MMB_TARGET_KIND _MMB_TARGET_MANAGED_BY_RESET
   declare -gA _MMB_TARGET_DEST _MMB_TARGET_REPO _MMB_TARGET_LOCAL_PATH \
-              _MMB_TARGET_WORKER_PROFILE _MMB_TARGET_AGENT_LAYER _MMB_TARGET_TRACKED_BY_LOGGER
+              _MMB_TARGET_WORKER_PROFILE _MMB_TARGET_AGENT_LAYER _MMB_TARGET_TRACKED_BY_LOGGER \
+              _MMB_TARGET_OWNER _MMB_TARGET_REQUIRES_GITHUB _MMB_TARGET_KIND _MMB_TARGET_MANAGED_BY_RESET
 
-  local id dest repo lp wp al tbl
-  while IFS=$'\t' read -r id dest repo lp wp al tbl; do
+  local id dest repo lp wp al tbl owner rg kind mbr
+  while IFS=$'\x1f' read -r id dest repo lp wp al tbl owner rg kind mbr; do
     [ -z "$id" ] && continue
     _MMB_TARGET_DEST[$id]="$dest"
     _MMB_TARGET_REPO[$id]="$repo"
@@ -134,6 +176,10 @@ PY
     _MMB_TARGET_WORKER_PROFILE[$id]="$wp"
     _MMB_TARGET_AGENT_LAYER[$id]="$al"
     _MMB_TARGET_TRACKED_BY_LOGGER[$id]="$tbl"
+    _MMB_TARGET_OWNER[$id]="$owner"
+    _MMB_TARGET_REQUIRES_GITHUB[$id]="$rg"
+    _MMB_TARGET_KIND[$id]="$kind"
+    _MMB_TARGET_MANAGED_BY_RESET[$id]="$mbr"
     _MMB_TARGETS_IDS="$_MMB_TARGETS_IDS $id"
   done <<< "$tsv"
 
@@ -199,8 +245,12 @@ mmb_target_field() {
     worker_profile)     printf '%s\n' "${_MMB_TARGET_WORKER_PROFILE[$id]}" ;;
     agent_layer)        printf '%s\n' "${_MMB_TARGET_AGENT_LAYER[$id]}" ;;
     tracked_by_logger)  printf '%s\n' "${_MMB_TARGET_TRACKED_BY_LOGGER[$id]}" ;;
+    owner)              printf '%s\n' "${_MMB_TARGET_OWNER[$id]}" ;;
+    requires_github)    printf '%s\n' "${_MMB_TARGET_REQUIRES_GITHUB[$id]}" ;;
+    kind)               printf '%s\n' "${_MMB_TARGET_KIND[$id]}" ;;
+    managed_by_reset)   printf '%s\n' "${_MMB_TARGET_MANAGED_BY_RESET[$id]}" ;;
     *)
-      _mmb_targets_err "campo desconhecido: $field (use dest|repo|local_path|worker_profile|agent_layer|tracked_by_logger)"
+      _mmb_targets_err "campo desconhecido: $field (use dest|repo|local_path|worker_profile|agent_layer|tracked_by_logger|owner|requires_github|kind|managed_by_reset)"
       return 2
       ;;
   esac
@@ -211,12 +261,46 @@ mmb_target_repo() {
   mmb_target_field "${1:-}" repo
 }
 
-# Açúcar: caminho absoluto local do target (MMB_ROOT/local_path).
+# Açúcar: caminho absoluto local do target.
+# local_path absoluto (começa com /) é usado direto; relativo é
+# resolvido sob $MMB_ROOT. Permite target externo fora do MMB_ROOT.
 mmb_target_path() {
   local id="${1:-}"
   local lp
   lp=$(mmb_target_field "$id" local_path) || return $?
-  printf '%s\n' "$MMB_ROOT/$lp"
+  if [[ "$lp" == /* ]]; then
+    printf '%s\n' "$lp"
+  else
+    printf '%s\n' "$MMB_ROOT/$lp"
+  fi
+}
+
+# Açúcar: owner GH do target, com fallback para MMB_GH_OWNER.
+# String vazia no registry = "usar global".
+mmb_target_owner() {
+  local id="${1:-}"
+  local owner
+  owner=$(mmb_target_field "$id" owner) || return $?
+  if [ -n "$owner" ]; then
+    printf '%s\n' "$owner"
+  else
+    printf '%s\n' "${MMB_GH_OWNER:-}"
+  fi
+}
+
+# Açúcar: target precisa de GitHub? Retorna "true"/"false".
+mmb_target_requires_github() {
+  mmb_target_field "${1:-}" requires_github
+}
+
+# Açúcar: kind do target (internal|external|external-fake).
+mmb_target_kind() {
+  mmb_target_field "${1:-}" kind
+}
+
+# Açúcar: reset-all pode operar neste target? "true"/"false".
+mmb_target_managed_by_reset() {
+  mmb_target_field "${1:-}" managed_by_reset
 }
 
 # Validador semântico (chamado pelo test, mas usável standalone).
@@ -266,13 +350,39 @@ mmb_targets_validate() {
     fi
   done
 
-  # local_path/.git existe (repo git)
+  # local_path/.git existe (repo git). Suporta absoluto (target externo).
   for id in $_MMB_TARGETS_IDS; do
-    local lp="$MMB_ROOT/${_MMB_TARGET_LOCAL_PATH[$id]}"
+    local lp_raw="${_MMB_TARGET_LOCAL_PATH[$id]}"
+    local lp
+    if [[ "$lp_raw" == /* ]]; then
+      lp="$lp_raw"
+    else
+      lp="$MMB_ROOT/$lp_raw"
+    fi
     if [ ! -d "$lp/.git" ]; then
       _mmb_targets_err "target $id: local_path/.git não existe ($lp/.git)"
       rc=1
     fi
+  done
+
+  # kind ∈ {internal, external, external-fake}
+  for id in $_MMB_TARGETS_IDS; do
+    case "${_MMB_TARGET_KIND[$id]}" in
+      internal|external|external-fake) ;;
+      *) _mmb_targets_err "target $id: kind inválido '${_MMB_TARGET_KIND[$id]}'"; rc=1 ;;
+    esac
+  done
+
+  # requires_github e managed_by_reset são "true"|"false" (vindo do parser).
+  for id in $_MMB_TARGETS_IDS; do
+    case "${_MMB_TARGET_REQUIRES_GITHUB[$id]}" in
+      true|false) ;;
+      *) _mmb_targets_err "target $id: requires_github inválido"; rc=1 ;;
+    esac
+    case "${_MMB_TARGET_MANAGED_BY_RESET[$id]}" in
+      true|false) ;;
+      *) _mmb_targets_err "target $id: managed_by_reset inválido"; rc=1 ;;
+    esac
   done
 
   # Regressão guard: 'core' não pode aparecer em ids/dests/repos.

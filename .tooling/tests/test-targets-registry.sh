@@ -154,6 +154,87 @@ path_cockpit=$(mmb_target_path cockpit)
   && pass "mmb_target_path cockpit é diretório existente terminado em /mmb-cockpit" \
   || fail "mmb_target_path cockpit é diretório existente terminado em /mmb-cockpit" "achei: $path_cockpit"
 
+# ─── Grupo 5b: campos opcionais PR 2A ──────────────────────────
+
+[ "$(mmb_target_owner cockpit)" = "x-force-42" ] \
+  && pass "mmb_target_owner cockpit == x-force-42" \
+  || fail "mmb_target_owner cockpit == x-force-42" "achei: $(mmb_target_owner cockpit)"
+
+[ "$(mmb_target_requires_github cockpit)" = "true" ] \
+  && pass "mmb_target_requires_github cockpit == true" \
+  || fail "mmb_target_requires_github cockpit == true" "achei: $(mmb_target_requires_github cockpit)"
+
+[ "$(mmb_target_kind cockpit)" = "internal" ] \
+  && pass "mmb_target_kind cockpit == internal" \
+  || fail "mmb_target_kind cockpit == internal" "achei: $(mmb_target_kind cockpit)"
+
+[ "$(mmb_target_managed_by_reset cockpit)" = "true" ] \
+  && pass "mmb_target_managed_by_reset cockpit == true" \
+  || fail "mmb_target_managed_by_reset cockpit == true"
+
+# Fixture: registry temporário com target externo (local_path absoluto +
+# owner vazio). Sub-shell isolada para não poluir o cache global do test.
+_tmp_target_dir=$(mktemp -d)
+mkdir -p "$_tmp_target_dir/.git"  # placeholder
+_tmp_registry=$(mktemp)
+cat > "$_tmp_registry" <<JSON
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "id": "ext-fake",
+      "dest": "ext-fake",
+      "repo": "weather-cli",
+      "local_path": "$_tmp_target_dir",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": false,
+      "owner": "",
+      "requires_github": false,
+      "kind": "external-fake",
+      "managed_by_reset": false
+    }
+  ]
+}
+JSON
+
+abs_path=$(
+  bash <<EOF
+source "$LIB_FILE"
+_MMB_TARGETS_FILE="$_tmp_registry"
+MMB_GH_OWNER=fallback-org
+mmb_targets_load >/dev/null && mmb_target_path ext-fake
+EOF
+)
+[ "$abs_path" = "$_tmp_target_dir" ] \
+  && pass "local_path absoluto resolve direto (sem prefixar MMB_ROOT)" \
+  || fail "local_path absoluto resolve direto" "achei: '$abs_path' esperado: '$_tmp_target_dir'"
+
+owner_fb=$(
+  bash <<EOF
+source "$LIB_FILE"
+_MMB_TARGETS_FILE="$_tmp_registry"
+MMB_GH_OWNER=fallback-org
+mmb_targets_load >/dev/null && mmb_target_owner ext-fake
+EOF
+)
+[ "$owner_fb" = "fallback-org" ] \
+  && pass "mmb_target_owner com owner vazio usa MMB_GH_OWNER" \
+  || fail "mmb_target_owner com owner vazio usa MMB_GH_OWNER" "achei: '$owner_fb'"
+
+ext_kind=$(
+  bash <<EOF
+source "$LIB_FILE"
+_MMB_TARGETS_FILE="$_tmp_registry"
+mmb_targets_load >/dev/null && mmb_target_kind ext-fake
+EOF
+)
+[ "$ext_kind" = "external-fake" ] \
+  && pass "mmb_target_kind external-fake aceito" \
+  || fail "mmb_target_kind external-fake aceito" "achei: '$ext_kind'"
+
+rm -rf "$_tmp_target_dir" "$_tmp_registry"
+
 if mmb_target_exists cockpit && ! mmb_target_exists nao-existe-mesmo; then
   pass "mmb_target_exists: 'cockpit' exit 0, 'nao-existe-mesmo' exit ≠ 0"
 else
