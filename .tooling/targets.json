@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "id": "cockpit",
+      "dest": "cockpit",
+      "repo": "mmb-cockpit",
+      "local_path": "mmb-cockpit",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": true
+    },
+    {
+      "id": "aquarium",
+      "dest": "aquarium",
+      "repo": "mmb-aquarium",
+      "local_path": "mmb-aquarium",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": true
+    },
+    {
+      "id": "logger",
+      "dest": "logger",
+      "repo": "mmb-logger",
+      "local_path": "mmb-logger",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": true
+    }
+  ]
+}
