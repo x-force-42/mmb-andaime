@@ -95,6 +95,7 @@ explicitamente.
 | `cost_usd` | soma de `usage` no transcript Claude × tabela de preços (ver "Custo via transcripts" abaixo) | reconciler | `NULL` (nunca estimar) |
 | `tokens_input` | input_tokens + cache_creation + cache_read no transcript | reconciler | `NULL` |
 | `tokens_output` | output_tokens no transcript | reconciler | `NULL` |
+| `model` | precedência: `state/agents.jsonl` spawn de planner → modelo dominante do transcript → `NULL` (ver "Derivação de `ciclos.model`" abaixo) | reconciler | `NULL` (nunca inferir) |
 | `diff_added` | `pr.additions` do GH | reconciler | `NULL` |
 | `diff_deleted` | `pr.deletions` do GH | reconciler | `NULL` |
 | `diff_files` | `pr.changedFiles` do GH | reconciler | `NULL` |
@@ -383,6 +384,35 @@ Rick reabriu o Claude na worktree, demo ad-hoc.
 | `transcript-no-usage` | Sessões lidas mas nenhum turn tinha `usage` (transcript corrompido / cancelado cedo) |
 | `transcript-mixed-model` | Modelos diferentes no mesmo transcript (raro; cost usa dominante) |
 | `unknown-model` | Modelo válido mas fora de `PRICING` — tokens preenchem, cost NULL |
+| `model-not-derivable` | Ciclo `completo` mas nem `planner_models` nem `cost_result.model` resolveram → `ciclos.model = NULL` |
+
+### Derivação de `ciclos.model`
+
+A coluna `model` deriva, **em ordem de precedência**:
+
+1. **`state/agents.jsonl` via `planner_models`** — caminho histórico
+   pré-workers-stateless (v < 0.3): spawn cujo `id` é igual ao nome
+   do planner (`cockpit`, `aquarium`, `logger`, `campo-premiado`,
+   `core`) carregava `model=<…>`. Preservado por compatibilidade
+   exata. Quando presente, vence o fallback.
+2. **Transcript Claude** — `compute_cost_for_ciclo` retorna
+   `CostResult.model`, o modelo **dominante** dos turns daquela
+   worktree (via `model_counts` em `UsageSums`). Determinístico,
+   auto-suficiente, derivado dos artefatos reais do trabalho. Cobre
+   o caminho universal pós-workers-stateless (v ≥ 0.3), onde o
+   `spawn` chega com `id=<target>-w-<pid>` e o filtro do (1) nunca
+   bate.
+3. **`NULL` honesto** — se nenhuma das duas fontes resolveu e o
+   ciclo é `status=completo`, emite warning `model-not-derivable`
+   (com `cycle_id` e razão: "sem transcript" vs "transcript sem
+   modelo identificado"). Estados não-completos (`abortado`,
+   `iniciado`, `planejado`, `pr_aberto`) com `model=NULL` não geram
+   warning — é caso normal.
+
+Não há inferência por env, repo, data, ou parsing de `id` stateless.
+Workers stateless executam triagem do método; o modelo deles não
+representa o modelo do ciclo. Quem faz o trabalho é o atomic, cujo
+modelo vive nos transcripts.
 
 ### Princípios
 

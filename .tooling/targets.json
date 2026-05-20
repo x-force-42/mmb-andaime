@@ -47,7 +47,7 @@
       "local_path": "/home/eliezer/vnt/ASUS/campo-premiado",
       "worker_profile": "project-orchestrator.md",
       "agent_layer": "project",
-      "tracked_by_logger": false,
+      "tracked_by_logger": true,
       "owner": "x-force-42",
       "requires_github": true,
       "kind": "external",
