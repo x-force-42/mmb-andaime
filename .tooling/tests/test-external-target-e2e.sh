@@ -176,14 +176,16 @@ else
   xfail "logger audit.py acessível pra inspeção" "$AUDIT não existe"
 fi
 
-# T9 (backfill agent_sessions): mesmo pattern hardcoded.
+# T9 (backfill agent_sessions): pattern deve usar short_to_repo helper.
+# Linha `legacy = f"mmb-{rec.project}"` é OK como fallback retrocompat
+# quando coexiste com a importação de short_to_repo.
 BACKFILL="$REAL_MMB_ROOT/mmb-logger/src/mmb_logger/backfill/agent_sessions.py"
 if [ -f "$BACKFILL" ]; then
-  if grep -qE 'f"mmb-\{(repo_short|rec\.project)\}"' "$BACKFILL"; then
-    xfail "logger backfill/agent_sessions.py resolve target externo" \
-          "T9 pendente: linhas ~543/623 ainda hardcodam f\"mmb-{...}\""
-  else
+  if grep -q "from mmb_logger.targets import .*short_to_repo" "$BACKFILL"; then
     pass "logger backfill/agent_sessions.py resolve target externo via registry"
+  else
+    xfail "logger backfill/agent_sessions.py resolve target externo" \
+          "T9 pendente: short_to_repo helper não importado"
   fi
 fi
 

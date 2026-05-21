@@ -217,6 +217,16 @@
 
   <h2>Entries</h2>
   <ul>
+    <li><a href="#v0-15-0">v0.15.0 — External target fortification Wave 1</a>
+      <ul>
+        <li><a href="#v0-15-0-saldo" class="sub">Saldo</a></li>
+        <li><a href="#v0-15-0-subtasks" class="sub">Sub-tasks concluídas</a></li>
+        <li><a href="#v0-15-0-validacao" class="sub">Validação pós-reconcile</a></li>
+        <li><a href="#v0-15-0-incidente" class="sub">Incidente operacional #42 (redrain)</a></li>
+        <li><a href="#v0-15-0-debitos" class="sub">Débitos / Wave 2 pendente</a></li>
+      </ul>
+    </li>
+
     <li><a href="#v0-14-0">v0.14.0 — Primeiro target externo real</a>
       <ul>
         <li><a href="#v0-14-0-saldo" class="sub">Saldo</a></li>
@@ -335,6 +345,205 @@
     <li><strong>Não:</strong> diário de conversa, atualização contínua
       por commit, registro de cada bug. Para isso, há outras peças.</li>
   </ul>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+
+<section class="entry" id="v0-15-0">
+  <h2>v0.15.0 — External target fortification Wave 1</h2>
+  <div class="meta">
+    <span class="tag">v0.15.0</span> 2026-05-21 ·
+    pós-tag <code>v0.14.0</code> · sessão 2026-05-21
+  </div>
+
+  <p>
+    Primeira onda do épico de fortificação <code>external-target-fortification</code>,
+    focada em transformar <code>campo-premiado</code> (<code>kind=external</code>) em
+    cidadão de primeira classe. Atacou os caminhos identificados no discovery onde o
+    andaime ou o logger ainda assumiam prefixo <code>mmb-</code> em repos, paths sob
+    <code>/MMB/</code>, ou owner global. Wave 2 (que toca runtime sensível do daemon)
+    permanece bloqueada por gate até evidência da causa raiz do
+    <code>commd-spontaneous-shutdown</code>.
+  </p>
+
+  <h3 id="v0-15-0-saldo">Saldo</h3>
+  <table>
+    <thead><tr><th>Item</th><th>Resultado</th></tr></thead>
+    <tbody>
+      <tr><td>Sub-tasks fechadas</td><td>3 (T5, T8/T9/T10, T11)</td></tr>
+      <tr><td>Sub-tasks deferidas</td><td>4 (T6, T7 explicitamente; T1–T4 em Wave 2 sob gate)</td></tr>
+      <tr><td>PRs mergeados</td><td>#41 em <code>mmb-logger</code></td></tr>
+      <tr><td>Commits no andaime</td><td><code>a57670a</code> (T5), <code>d9542cd</code> (T11)</td></tr>
+      <tr><td>Commit no logger</td><td><code>141fb1f</code> (squash do PR #41, cobrindo T8/T9/T10)</td></tr>
+      <tr><td>Diff agregado do PR #41</td><td>476 additions, 20 deletions, 7 files</td></tr>
+      <tr><td>Suite</td><td>304 passed (mmb-logger)</td></tr>
+      <tr><td>Smoke external</td><td>6 PASS + 5 XFAIL + 0 FAIL (XFAILs linkados ao trabalho de Wave 2)</td></tr>
+      <tr><td>Custo da Wave 1 no logger</td><td>$37.59 (claude-opus-4-7, ~39min ciclo)</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="v0-15-0-subtasks">Sub-tasks concluídas</h3>
+  <ul>
+    <li>
+      <strong>T5 — <code>atomic-agent.md</code> portável</strong>
+      (commit <code>a57670a</code>): substituiu 6 ocorrências de
+      <code>/MMB/</code> literal por
+      <code>${MMB_TOOLING:-/MMB/.tooling}</code> com fallback retrocompat;
+      documentação de worktree path passa a referenciar <code>local_path</code>
+      do registry em vez de assumir <code>&lt;repo&gt;</code> dentro de
+      <code>$MMB_ROOT</code> — suporte explícito a <code>kind=external</code>.
+    </li>
+    <li>
+      <strong>T8/T9/T10 — Logger linkage de target externo</strong>
+      (PR #41, squash em <code>141fb1f</code>):
+      <ul>
+        <li>T8: <code>audit._find_ciclo_by_epic_project</code> resolve
+          <code>project_short → repo</code> via novo helper
+          <code>mmb_logger.targets.short_to_repo</code> (registry + fallback
+          retrocompat <code>mmb-&lt;short&gt;</code>).</li>
+        <li>T9: <code>backfill.agent_sessions</code> usa o mesmo helper em
+          <code>link_via_github</code> e <code>link_to_db_ciclo</code> — não
+          mais hardcode <code>f"mmb-{short}"</code>.</li>
+        <li>T10: <code>derive.parse_closes</code> aceita
+          <code>Closes owner/repo#N</code> (case-insensitive) além de
+          <code>Closes #N</code>; <code>reconcile.link_pr_to_issue</code>
+          ignora refs cross-repo apontando pra repo diferente, com warning
+          explícito.</li>
+      </ul>
+      9 testes novos + invariante interno cockpit preservado.
+    </li>
+    <li>
+      <strong>T11 — Smoke external inicial</strong>
+      (commit <code>d9542cd</code>): novo
+      <code>.tooling/tests/test-external-target-e2e.sh</code> com sandbox
+      <code>external-fake</code> fora de <code>$MMB_ROOT</code>. 11
+      assertivas: 6 PASS (registry, path absoluto, owner per-target,
+      profile portável) + 5 XFAIL explícitos linkados ao trabalho de Wave 2
+      e às sub-tasks fechadas hoje. XFAILs viram PASS automaticamente
+      quando cada item mergear.
+    </li>
+  </ul>
+
+  <h3 id="v0-15-0-validacao">Validação pós-reconcile</h3>
+  <p>
+    Reconcile completo do logger pós-merge confirmou a projeção da Wave 1.
+    Ciclo <code>logger-external-target-linkage__logger__2026-05-21T01:10:39Z</code>:
+  </p>
+  <table>
+    <thead><tr><th>Campo</th><th>Valor</th></tr></thead>
+    <tbody>
+      <tr><td><code>status</code></td><td><code>completo</code></td></tr>
+      <tr><td><code>project</code></td><td><code>mmb-logger</code> (prefixo interno preservado)</td></tr>
+      <tr><td><code>pr_url</code></td><td><code>https://github.com/x-force-42/mmb-logger/pull/41</code></td></tr>
+      <tr><td><code>pr_number</code></td><td>41</td></tr>
+      <tr><td><code>merged_to_main</code></td><td>1 (true)</td></tr>
+      <tr><td><code>diff_added / diff_deleted / diff_files</code></td><td>476 / 20 / 7</td></tr>
+      <tr><td>Issue canônica #40</td><td>CLOSED (auto-close via <code>Closes #40</code>)</td></tr>
+      <tr><td>Eventos linkados</td><td>11; 0 duplicatas por <code>source_key</code></td></tr>
+      <tr><td>Warnings inesperadas</td><td>0; só as 2 esperadas do incidente abaixo</td></tr>
+      <tr><td>Reconcile warnings agregadas</td><td>60 (−1 vs pré-merge, resolveu <code>pr-without-closes</code> do PR #41)</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="v0-15-0-incidente">Incidente operacional #42 (redrain) — aprendizado, não falha da Wave 1</h3>
+  <p>
+    Durante o dispatch do briefing (Mestre → logger orq), o
+    <code>commd</code> sofreu a 3ª <code>spontaneous-shutdown</code> da série
+    (padrão idêntico aos casos de 2026-05-19/20: <code>poll: orphan
+    recovered → dispatch → shutdown</code> no mesmo tick). Master ficou cego
+    porque sem <code>commd</code> vivo, o status do orq fica pendente no
+    inbox.
+  </p>
+  <p>
+    Após restart autorizado, o <code>commd</code> drainou as 8 mensagens
+    pendentes. O reprocessamento do briefing órfão em <code>.processing/</code>
+    fez o orq logger executar <code>create-task-issue.sh</code> novamente,
+    criando <strong>issue #42 com a mesma <code>mmb-cycle-key</code> de #40</strong>
+    e spawnando um segundo atomic <code>logger-L7</code> em pane <code>%26</code>.
+    O atomic novo chegou a editar o body do PR #41 adicionando <code>Closes #42</code>
+    e registrar warn <code>e-2026-05-21-002</code> antes de ser morto via
+    <code>tmux kill-pane -t %26</code>.
+  </p>
+  <p>Remediação aplicada (com aprovação explícita):</p>
+  <ul>
+    <li>Pane <code>%26</code> morta antes de tentar abrir PR duplicado;</li>
+    <li>Issue #42 fechada como duplicata via
+      <code>gh issue close 42 --comment "..."</code>;</li>
+    <li>Body do PR #41 limpo cosmeticamente: removido <code>Closes #42</code>
+      + nota explicativa; mantido apenas <code>Closes #40</code>; auto-link de
+      #42 sumiu junto;</li>
+    <li>Warn <code>e-2026-05-21-003</code> registrado no journal pelo Mestre.</li>
+  </ul>
+  <p>
+    Wave 1 prosseguiu sem regressão. <strong>Não é falha da Wave 1</strong> —
+    é falha do andaime na fronteira <em>orq local + GH</em> quando há redrain
+    pós-shutdown. Vira débito explícito abaixo (<code>redrain-idempotency-gap</code>).
+  </p>
+
+  <h3 id="v0-15-0-debitos">Débitos / Wave 2 pendente</h3>
+
+  <h4>Débitos novos abertos por Wave 1</h4>
+  <ul>
+    <li>
+      <strong><code>redrain-idempotency-gap</code></strong> (<code>e-2026-05-21-003</code>):
+      <code>create-task-issue.sh</code> injeta âncora <code>mmb-cycle-key</code>
+      no body mas <strong>não consulta GitHub antes de criar</strong>. Redrain
+      pós-shutdown reprocessa briefing órfão em <code>.processing/</code> e
+      cria issue duplicada. Idempotência hoje é só na projeção retrospectiva
+      do logger. Mitigação: pre-check via <code>gh issue list --search</code>
+      por <code>mmb-cycle-key</code> antes de criar, ou dedup explícito por
+      cycle-key no <code>create-task-issue.sh</code>.
+    </li>
+    <li>
+      <strong><code>commd-spontaneous-shutdown</code></strong> (<code>e-2026-05-20-002</code>):
+      6 ocorrências históricas + 1 nova durante a Wave 1. Hotfix diagnóstico
+      no commit <code>10ef79a</code> instrumentou os traps
+      (HUP/INT/TERM/EXIT/ERR) — mas a 7ª queda foi de daemon pré-hotfix
+      (rodando há ~23h). <strong>Causa raiz ainda pendente</strong> da
+      próxima ocorrência com instrumentação ativa.
+    </li>
+  </ul>
+
+  <h4>Wave 2 (gate ativo)</h4>
+  <p>
+    Wave 2 toca runtime sensível do daemon e não inicia até uma destas
+    condições: <em>(a)</em> próxima queda do <code>commd</code> capturada com
+    telemetry do hotfix; <em>(b)</em> janela de 24–48h sem queda;
+    <em>(c)</em> autorização explícita do Rick pra assumir o risco.
+    Sub-tasks no gate:
+  </p>
+  <ul>
+    <li><strong>T1</strong> — <code>send-status-pr-opened.sh</code>: derivar
+      <code>REPO_FULL</code> via <code>mmb_target_repo</code> em vez de
+      <code>f"mmb-${REPO_SHORT}"</code>. Origem da warn
+      <code>e-2026-05-19-005</code>.</li>
+    <li><strong>T2</strong> — <code>check-deps.sh</code>: usar
+      <code>mmb_target_owner</code> em vez de hardcode <code>x-force-42</code>.</li>
+    <li><strong>T3</strong> — <code>spawn-atomic.sh</code>: substituir
+      <code>/MMB/</code> literal no prompt do atomic (linha ~144) por
+      path do registry; detectar ausência de sessão tmux e escalar via
+      <code>question</code> em vez de fallback manual silencioso.
+      Origens: <code>e-2026-05-19-009</code>, <code>-010</code>.</li>
+    <li><strong>T4</strong> — <code>up.sh</code>: iterar
+      <code>mmb_targets_list</code> em vez de hardcodes
+      <code>mmb-aquarium</code>/<code>mmb-cockpit</code>/<code>mmb-logger</code>.</li>
+  </ul>
+
+  <h4>Profiles deferidos (T6/T7)</h4>
+  <ul>
+    <li><strong>T6</strong> — <code>project-orchestrator.md</code> (~21 refs a
+      <code>/MMB/</code>, <code>mmb-cockpit</code>, <code>x-force-42</code>):
+      triar exemplos didáticos vs operacionais, parametrizar os operacionais.</li>
+    <li><strong>T7</strong> — <code>master.md</code> (~10 refs) e
+      <code>master-worker.md</code> (~2 refs): mesmo tratamento.</li>
+  </ul>
+
+  <h4>Prova real adiada (T12)</h4>
+  <p>
+    Rodar um épico real no <code>campo-premiado</code> sem intervenção manual,
+    confirmando que nenhuma das 8 warns 2026-05-19 reaparece. Só faz sentido
+    após Wave 2 fechar T1/T3.
+  </p>
 </section>
 
 <!-- ──────────────────────────────────────────────────────────── -->
