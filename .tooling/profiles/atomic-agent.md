@@ -1,8 +1,9 @@
 # Agente Atômico — protocolo de operação (v3)
 
 Doc de referência pra sessão Claude operando dentro de uma
-worktree de tarefa: `/MMB/<repo>/.worktrees/<id>-<slug>`,
-em pane efêmero do tmux.
+worktree de tarefa (`<repo-path>/.worktrees/<id>-<slug>`,
+onde `<repo-path>` pode estar fora do `$MMB_ROOT` se o target
+for `kind=external`), em pane efêmero do tmux.
 
 Você é a ferramenta de execução. Tempo curto de vida. Leia
 até o fim antes de tocar arquivo.
@@ -35,9 +36,12 @@ git rev-parse --show-toplevel
 git rev-parse --git-dir
 ```
 
-Toplevel legítimo: `/MMB/<repo>/.worktrees/<id>-<slug>`.
-Se for a raiz: **pare**. Avise via `msg.sh` que pré-flight
-falhou? Não — não tem canal. Apenas saia (não bagunce nada).
+Toplevel legítimo: `<repo-path>/.worktrees/<id>-<slug>` (o
+`<repo-path>` casa com `local_path` do target no registry —
+absoluto fora de `$MMB_ROOT` quando `kind=external`).
+Se for a raiz do repo: **pare**. Avise via `msg.sh` que
+pré-flight falhou? Não — não tem canal. Apenas saia (não
+bagunce nada).
 
 ### 2. Você não está no default branch
 
@@ -77,12 +81,17 @@ Vazio = ok. Mudanças não-suas? **Pare**.
 Seu prompt inicial te disse o número da sub-issue. Leia:
 
 ```bash
-source /MMB/.tooling/config.sh
+# $MMB_TOOLING é exportado por spawn-atomic.sh quando disponível;
+# fallback pro symlink /MMB pra atomics legados.
+source "${MMB_TOOLING:-/MMB/.tooling}/config.sh"
 gh issue view <N> --repo "$MMB_GH_OWNER/<este-repo>"
 ```
 
 `--repo` é **obrigatório** (sem ele, `gh` infere do CWD e pode
-quebrar).
+quebrar). Em target `kind=external` cujo owner GH difere do
+`MMB_GH_OWNER` global, o `spawn-atomic.sh` resolve via registry e o
+owner correto deveria chegar no seu prompt — se não chegou, pare e
+saia (orq local refaz).
 
 Eventualmente, o orq de projeto pode ter espelhado o brief
 em `docs/tasks/<id>-<slug>.md` deste repo. Se espelhou,
@@ -110,7 +119,7 @@ Antes de cada commit (ou no mínimo a cada 5 min de trabalho
 contínuo), pingue:
 
 ```bash
-/MMB/.tooling/bin/agents.sh heartbeat $MMB_AGENT_ID
+"${MMB_TOOLING:-/MMB/.tooling}/bin/agents.sh" heartbeat "$MMB_AGENT_ID"
 ```
 
 Sem heartbeat, o orq de projeto vai te declarar zumbi após
@@ -123,7 +132,7 @@ Você **não tem `msg.sh`** (canal proibido). Mas tem `log.sh`
 pra registrar erro crítico antes de sair sem entregar:
 
 ```bash
-/MMB/.tooling/bin/log.sh critical <event-slug> "<motivo>" \
+"${MMB_TOOLING:-/MMB/.tooling}/bin/log.sh" critical <event-slug> "<motivo>" \
   --epic <epic-slug> --task <task-id>
 ```
 
@@ -148,7 +157,7 @@ Após pré-flight verde + brief lido:
 4. **Não mergeie** em main/master.
 5. **Quando terminar**, abra PR:
    ```bash
-   /MMB/.tooling/bin/open-pr.sh
+   "${MMB_TOOLING:-/MMB/.tooling}/bin/open-pr.sh"
    ```
    Que faz:
    - `git push origin HEAD`
@@ -260,12 +269,12 @@ output, exporte a variável, e só então chame open-pr.sh:
 # Cockpit ou Aquarium (Vitest):
 npm test 2>&1 | tee /tmp/suite-output.txt
 [ "${PIPESTATUS[0]}" -eq 0 ] || { echo "Suíte vermelha, NÃO abrir PR"; exit 1; }
-MMB_SUITE_OUTPUT=/tmp/suite-output.txt /MMB/.tooling/bin/open-pr.sh
+MMB_SUITE_OUTPUT=/tmp/suite-output.txt "${MMB_TOOLING:-/MMB/.tooling}/bin/open-pr.sh"
 
 # Logger (Pytest):
 .venv/bin/pytest 2>&1 | tee /tmp/suite-output.txt
 [ "${PIPESTATUS[0]}" -eq 0 ] || { echo "Suíte vermelha, NÃO abrir PR"; exit 1; }
-MMB_SUITE_OUTPUT=/tmp/suite-output.txt /MMB/.tooling/bin/open-pr.sh
+MMB_SUITE_OUTPUT=/tmp/suite-output.txt "${MMB_TOOLING:-/MMB/.tooling}/bin/open-pr.sh"
 ```
 
 `open-pr.sh` valida (exit 3 se falhar):
