@@ -363,7 +363,7 @@ run_foreground() {
   echo $$ > "$PID_FILE"
 
   cleanup() {
-    trap '' EXIT INT TERM  # re-entrancy: 2º sinal durante o handler
+    trap '' EXIT INT TERM HUP ERR  # re-entrancy: 2º sinal/erro durante o handler
     log "shutdown..."
     # Mata workers em background (subshells com flock). Mensagens em
     # curso ficam em .processing/ e drain do próximo start retoma.
@@ -374,7 +374,33 @@ run_foreground() {
     rm -f "$PID_FILE"
     exit 0
   }
-  trap cleanup EXIT INT TERM
+
+  # ─── Instrumentação de traps (diagnóstico spontaneous-shutdown) ──
+  # Cada handler captura `$?` na PRIMEIRA linha — qualquer comando antes
+  # corromperia o valor. Loga origem + rc + linha; cmd é pista auxiliar
+  # ($BASH_COMMAND no EXIT trap tipicamente aponta pro próprio exit).
+  # Signal handlers chamam cleanup (que limpa traps e exit 0). ERR só
+  # loga: deixa set -e propagar até EXIT, que então chama cleanup.
+  on_signal() {
+    local rc=$?
+    local sig="$1"
+    log "signal trapped: $sig rc=$rc line=${BASH_LINENO[0]} cmd='$BASH_COMMAND'"
+    cleanup
+  }
+  on_err() {
+    local rc=$?
+    log "ERR trapped: rc=$rc line=${BASH_LINENO[0]} cmd='$BASH_COMMAND'"
+  }
+  on_exit() {
+    local rc=$?
+    log "EXIT trapped: rc=$rc cmd='$BASH_COMMAND'"
+    cleanup
+  }
+  trap 'on_signal HUP'  HUP
+  trap 'on_signal INT'  INT
+  trap 'on_signal TERM' TERM
+  trap on_err  ERR
+  trap on_exit EXIT
 
   log "================================================================"
   log "commd iniciado (pid=$$ mode=$MMB_MODE)"
