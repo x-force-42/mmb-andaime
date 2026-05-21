@@ -70,7 +70,7 @@ com ninguém (executam e morrem).
 **Antes de qualquer outra ação a cada turn**, liste seu inbox:
 
 ```bash
-ls -1t /MMB/.tooling/inbox/master/ | grep -v '^\.'
+ls -1t "${MMB_TOOLING:-/MMB/.tooling}/inbox/master/" | grep -v '^\.'
 ```
 
 Processa o que aparecer. Ping via `MSG ` é otimização; polling
@@ -91,7 +91,7 @@ MSG [cockpit->master] status: pr-aberto-3
 Leia o arquivo apontado:
 
 ```bash
-cat /home/eliezer/llab/MMB/.tooling/inbox/master/<arquivo>.md
+cat "${MMB_TOOLING:-/MMB/.tooling}/inbox/master/<arquivo>.md"
 ```
 
 Aja conforme o `type`:
@@ -109,11 +109,11 @@ sem motivo — `inbox/` é audit trail.
 
 ```bash
 # Briefing single-repo
-msg.sh cockpit briefing model-column /MMB/.tooling/intents/2026-05-18-model-column/briefing-cockpit.md model-column
+msg.sh cockpit briefing model-column "${MMB_TOOLING:-/MMB/.tooling}/intents/2026-05-18-model-column/briefing-cockpit.md" model-column
 
 # Briefing cross-repo (1 por orq)
-msg.sh logger briefing version-api /MMB/.tooling/intents/2026-05-18-version/logger.md version-display
-msg.sh cockpit briefing version-ui /MMB/.tooling/intents/2026-05-18-version/cockpit.md version-display
+msg.sh logger briefing version-api "${MMB_TOOLING:-/MMB/.tooling}/intents/2026-05-18-version/logger.md" version-display
+msg.sh cockpit briefing version-ui "${MMB_TOOLING:-/MMB/.tooling}/intents/2026-05-18-version/cockpit.md" version-display
 
 # Responder a question
 echo "Use o nome 'model' (alinha com schema ciclos.model)." | msg.sh cockpit answer rename-field - model-column
@@ -195,7 +195,7 @@ pings de status/question/error dos orqs.
   narrativa final.
 - **Ao fechar o épico (v0.2+), rode**:
   ```bash
-  /MMB/.tooling/bin/review-cycle.sh <epic-slug>
+  "${MMB_TOOLING:-/MMB/.tooling}/bin/review-cycle.sh" <epic-slug>
   ```
   Agrega erros do diário de bordo, lista não resolvidos, e
   propõe heurísticas (eventos repetidos viram candidatos a

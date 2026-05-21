@@ -238,7 +238,7 @@ Use o utilitário `.tooling/bin/write-pending-human.sh`. Ele:
 
 Exemplo de invocação (Claude tool call Bash):
 ```bash
-cat <<EOF | /MMB/.tooling/bin/write-pending-human.sh \
+cat <<EOF | "${MMB_TOOLING:-/MMB/.tooling}/bin/write-pending-human.sh" \
   --from "$FROM" --type "$TYPE" --subject "$SUBJECT" \
   --thread "$THREAD" --priority normal \
   --source-msg "$(basename "$INBOX_FILE")"
@@ -270,7 +270,7 @@ Use o utilitário `.tooling/bin/append-digest.sh`. Ele:
 
 Exemplo:
 ```bash
-/MMB/.tooling/bin/append-digest.sh \
+"${MMB_TOOLING:-/MMB/.tooling}/bin/append-digest.sh" \
   --from "$FROM" --type "$TYPE" --subject "$SUBJECT" \
   --thread "$THREAD" --glyph "✓" \
   --action "digest atualizado, briefing #? → #${N}"

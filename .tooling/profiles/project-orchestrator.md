@@ -36,8 +36,11 @@
 ---
 
 Doc de referência pra worker que processa mensagens do papel de **um**
-target registrado em [`.tooling/targets.json`](../targets.json) (atuais:
-`mmb-cockpit`, `mmb-aquarium`, `mmb-logger`).
+target registrado em [`.tooling/targets.json`](../targets.json). A lista
+canônica vive no registry — consulte via `mmb_targets_list` ou direto
+no JSON; inclui targets internos (`repo == "mmb-<id>"`, sob
+`$MMB_ROOT`) e externos (`kind=external`, `local_path` absoluto fora do
+`$MMB_ROOT`).
 
 ## Quem você é
 
@@ -68,7 +71,7 @@ fala só com o Mestre (e os atômicos que você spawna).
 ## Estrutura física que você opera
 
 ```
-/MMB/
+$MMB_ROOT/                            (ex: /home/eliezer/llab/MMB — raiz do andaime)
 ├── .tooling/
 │   ├── inbox/<seu-repo-short>/    ← suas mensagens recebidas
 │   │   └── (master te manda briefings/answers aqui)
@@ -80,13 +83,17 @@ fala só com o Mestre (e os atômicos que você spawna).
 │       ├── task-start.sh          ← worktree+branch (chamado pelo spawn)
 │       ├── task-end.sh            ← cleanup pós-merge
 │       └── task-abort.sh          ← cleanup pré-merge (descarta)
-└── <seu-repo>/                    ← seu território
+└── <seu-repo-path>/               ← seu território (resolvido via registry)
     ├── CLAUDE.md                  ← contexto técnico local
     └── docs/                      ← seu (orq) — não atômicos
 ```
 
-> **Nota:** o `seu-repo-short` é o `id` do target registrado (sem o
-> prefixo `mmb-`); o repo path completo é `mmb-<id>`. Fonte: [`targets.json`](../targets.json).
+> **Nota:** o `seu-repo-short` é o `id` do target registrado.
+> Em targets internos o repo path é `$MMB_ROOT/mmb-<id>`;
+> em `kind=external`, o `local_path` é absoluto fora do `$MMB_ROOT`
+> (ex: `/home/eliezer/vnt/ASUS/campo-premiado`). Resolva sempre via
+> `mmb_target_path <id>` ou consultando o registry. Fonte:
+> [`targets.json`](../targets.json).
 
 ## Polling-on-every-turn + supervision tick (OBSOLETO desde v0.3)
 
@@ -142,7 +149,9 @@ interromper o Mestre. Não improvise. Não resuma. Não pule.**
   suíte em `## Suíte verde`:
 
   ```bash
-  pr_body=$(gh pr view <pr-N> --repo x-force-42/<repo> --json body -q .body)
+  # $TARGET_OWNER vem de `mmb_target_owner <id>` (suporta target externo
+  # com owner GH diferente do MMB_GH_OWNER global).
+  pr_body=$(gh pr view <pr-N> --repo "$TARGET_OWNER/<repo>" --json body -q .body)
   if echo "$pr_body" | grep -q "## Suíte verde"; then
     suite_status=verde
   else
@@ -207,7 +216,7 @@ Além de `msg.sh master error`, registre no journal pra que o
 master agregue ao fechar o épico via `review-cycle.sh`:
 
 ```bash
-/MMB/.tooling/bin/log.sh error <event-slug> "<msg curta>" \
+"${MMB_TOOLING:-/MMB/.tooling}/bin/log.sh" error <event-slug> "<msg curta>" \
   --epic <thread> --task <task-id>
 ```
 
@@ -255,7 +264,7 @@ inferência heurística pra casar issue ↔ briefing.
 #
 # Stdout = número da issue (só isso). Stderr = URL + diagnósticos.
 
-ISSUE=$(/MMB/.tooling/bin/create-task-issue.sh <seu-repo> <inbox-file>)
+ISSUE=$("${MMB_TOOLING:-/MMB/.tooling}/bin/create-task-issue.sh" <seu-repo> <inbox-file>)
 echo "Issue criada: #$ISSUE"
 ```
 
@@ -283,8 +292,8 @@ viram warning `missing-anchor` no reconcile.
 ### 3. Spawn do atômico
 
 ```bash
-/MMB/.tooling/bin/check-deps.sh <seu-repo> <task-id>    # se aplicável
-/MMB/.tooling/bin/spawn-atomic.sh <seu-repo> <task-id> <issue-number>
+"${MMB_TOOLING:-/MMB/.tooling}/bin/check-deps.sh" <seu-repo> <task-id>    # se aplicável
+"${MMB_TOOLING:-/MMB/.tooling}/bin/spawn-atomic.sh" <seu-repo> <task-id> <issue-number>
 ```
 
 `spawn-atomic.sh` cria worktree, abre split-pane embaixo de
@@ -327,9 +336,9 @@ chamada manual de `msg.sh` em v0.10+. Wrapper:
 - Chama `msg.sh master status pr-aberto-<N>` com payload completo.
 
 ```bash
-/MMB/.tooling/bin/send-status-pr-opened.sh <repo-short> <pr-number> <issue-number> <thread>
+"${MMB_TOOLING:-/MMB/.tooling}/bin/send-status-pr-opened.sh" <repo-short> <pr-number> <issue-number> <thread>
 # Ex:
-/MMB/.tooling/bin/send-status-pr-opened.sh cockpit 42 17 model-column
+"${MMB_TOOLING:-/MMB/.tooling}/bin/send-status-pr-opened.sh" cockpit 42 17 model-column
 ```
 
 Override opcional (use só se tiver certeza — auto-detect é o padrão):
@@ -354,7 +363,7 @@ Quando perceber que PR foi mergeado (na próxima vez que olhar
 `gh pr list` ou quando Rick mergeear e você notar):
 
 ```bash
-/MMB/.tooling/bin/task-end.sh <seu-repo> <task-id>
+"${MMB_TOOLING:-/MMB/.tooling}/bin/task-end.sh" <seu-repo> <task-id>
 
 # Após task-end, levantar dados do merge:
 #   gh pr view <pr-N> --json mergedAt,url -q '.mergedAt + " " + .url'
@@ -373,7 +382,7 @@ EOF
 Se o PR foi rejeitado / abortado por algum motivo:
 
 ```bash
-/MMB/.tooling/bin/task-abort.sh <seu-repo> <task-id>
+"${MMB_TOOLING:-/MMB/.tooling}/bin/task-abort.sh" <seu-repo> <task-id>
 
 msg.sh master error task-abortada-<id> - <thread> <<EOF
 Task <id> abortada. Motivo: <...>
