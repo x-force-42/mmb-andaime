@@ -19,7 +19,7 @@ desligado.
 │  - dispara briefings via msg.sh                              │
 │  ↕ (mailbox em .tooling/inbox/<dest>/)                       │
 │                                                              │
-│  ORQS LOCAIS (workers stateless via commd → claude -p)       │
+│  ORQS DE PROJETO (workers stateless via commd → claude -p)   │
 │  - autônomos: criam sub-issue com `create-task-issue.sh`     │
 │    (injeta âncora mmb-cycle-key) + spawnam atômico           │
 │  - escalam dúvidas via msg.sh master question                │
@@ -42,13 +42,14 @@ meio acontece via mailbox FS + commd + workers stateless.
 
 ## Contratos canônicos
 
-Três documentos definem o método:
+Quatro documentos definem o método:
 
 | Doc | Papel |
 |---|---|
+| [`ontology.md`](ontology.md) | Linguagem ubíqua: vocabulário canônico do domínio (um termo PT + um EN por conceito), conjuntos fechados e regras anti-homônimo. Os demais docs deferem a ele para a *escolha do nome*. |
 | [`source-of-truth.md`](source-of-truth.md) | Contrato governando o que o `mmb-logger` projeta na DB. Define matriz de fontes canônicas, dois domínios (derivado vs humano), princípios operacionais, e plano em fases. |
 | [`protocol.md`](protocol.md) | Especificação do protocolo de mailbox + commd → worker stateless. |
-| [`guardrails.md`](guardrails.md) | Comportamentos vetados por papel (M*/L*/A* — Master/orq Local/Atômico). |
+| [`guardrails.md`](guardrails.md) | Comportamentos vetados por papel (M*/L*/A* — Master/orq/Atômico). |
 
 Os profiles em [`profiles/`](profiles/) detalham o modus operandi de
 cada papel. A âncora `mmb-cycle-key` (specificada no source-of-truth)
@@ -60,13 +61,14 @@ transcript no reconcile do logger.
 ```
 .tooling/
 ├── README.md                       ← este arquivo
+├── ontology.md                     ← linguagem ubíqua (vocabulário canônico)
 ├── source-of-truth.md              ← contrato do mmb-logger
 ├── protocol.md                     ← protocolo mailbox + commd
 ├── guardrails.md                   ← comportamentos vetados (M*/L*/A*)
 ├── config.sh                       ← knobs centrais (sourced pelos scripts)
 ├── profiles/
 │   ├── master.md                   ← modus operandi do mestre
-│   ├── project-orchestrator.md     ← modus operandi dos orqs locais
+│   ├── project-orchestrator.md     ← modus operandi dos orqs
 │   └── atomic-agent.md             ← protocolo dos atômicos
 ├── templates/
 │   ├── master-briefing.md          ← briefing local (não vira issue)
@@ -213,7 +215,7 @@ Estado em-voo:
 
 ## Quando NÃO usar este andaime
 
-- Hotfix mínimo (1 linha) que Rick pede direto pro orq local —
+- Hotfix mínimo (1 linha) que Rick pede direto pro orq —
   modo dev tradicional.
 - Pergunta exploratória / debug — conversa direta sem ritual.
 - Refactor interno do próprio andaime — Rick + Mestre editam

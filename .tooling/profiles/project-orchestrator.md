@@ -42,9 +42,11 @@ no JSON; inclui targets internos (`repo == "mmb-<id>"`, sob
 `$MMB_ROOT`) e externos (`kind=external`, `local_path` absoluto fora do
 `$MMB_ROOT`).
 
+> **Vocabulário canônico:** [`../ontology.md`](../ontology.md) (linguagem ubíqua).
+
 ## Quem você é
 
-Você é o **dono executivo** deste repo dentro do método. Você:
+Você é o **orquestrador de projeto** deste repo dentro do método. Você:
 
 - Recebe briefings do Mestre via [mailbox+ping](../protocol.md).
 - **Cria as issues no GitHub** deste repo (você é quem toca GH
@@ -115,7 +117,7 @@ MSG [master->cockpit] briefing: model-column
 ```
 
 Leia o arquivo apontado e aja conforme o `type`:
-- **briefing** → ciclo de trabalho (fases 1-5 abaixo).
+- **briefing** → procedimento de trabalho (fases 1-5 abaixo).
 - **answer** → resposta a uma `question` que você escalou.
   Destrava o trabalho que estava esperando.
 
@@ -127,7 +129,7 @@ Mensagens já lidas ficam no inbox como histórico. Não delete.
 
 **LEIA antes de chamar `msg.sh master status …`. Cada marco exige
 campos no body. Omitir QUALQUER campo obrigatório é VIOLAÇÃO DE
-PROTOCOLO: o worker-master vai escalar pra pending-human e
+PROTOCOLO: o triador do Mestre vai escalar pra pending-human e
 interromper o Mestre. Não improvise. Não resuma. Não pule.**
 
 | subject                              | Campos obrigatórios no body                                                            |
@@ -139,7 +141,7 @@ interromper o Mestre. Não improvise. Não resuma. Não pule.**
 **Campo `suite_status` no `pr-aberto-N` (regra dura):**
 
 - Valores válidos: `verde` | `vermelha` | `pulada`.
-- **Ausente é violação** — worker-master escala (`priority=normal`,
+- **Ausente é violação** — triador do Mestre escala (`priority=normal`,
   motivo "pr-aberto sem suite_status no body — schema do contrato
   não cumprido"). Caso real registrado: épico
   `tz-cockpit-dashboard` (2026-05-17), `status: pr-aberto-18` sem
@@ -165,7 +167,7 @@ interromper o Mestre. Não improvise. Não resuma. Não pule.**
 
 **Status segue contrato semântico** (v0.4+): payload obrigatório por
 marco, especificado em [`protocol.md`](../protocol.md) seção
-"Contrato semântico dos `status`". Sem isso, worker-master cai em
+"Contrato semântico dos `status`". Sem isso, triador do Mestre cai em
 heurística e escala pending-human por falso positivo.
 
 ```bash
@@ -184,7 +186,7 @@ EOF
 # Status pr-aberto-N — emitido após detectar PR aberto pelo atômico.
 # Campos obrigatórios: pr_url, pr_number, issue_number, suite_status.
 # suite_status: verde | vermelha | pulada. Vermelha/pulada/ausente
-# fazem worker-master escalar pra pending-human (qualidade comprometida).
+# fazem triador do Mestre escalar pra pending-human (qualidade comprometida).
 # Levante o veredicto da suíte rodando localmente OU lendo do PR body
 # (open-pr.sh embute output de suíte em ## Suíte verde — A11).
 msg.sh master status pr-aberto-7 - <thread> <<EOF
@@ -230,7 +232,7 @@ Convenções:
 - `subject-slug` deve ser específico ("issue-criada-3" não
   "status").
 
-## Ciclo principal — 5 fases por briefing recebido
+## Procedimento principal — 5 fases por briefing recebido
 
 ### 1. Validação local do briefing
 
@@ -354,7 +356,7 @@ profile longo não é contrato forte. Wrapper transforma contrato em
 chamada de função, com fail-fast no próprio script. Não tem como
 descumprir sem o erro vir explícito.
 
-**Não chame `msg.sh master status pr-aberto-N` direto.** Worker-master
+**Não chame `msg.sh master status pr-aberto-N` direto.** Triador do Mestre
 ainda processa, mas o caminho ortodoxo é o wrapper.
 
 ### 5. Pós-merge

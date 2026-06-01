@@ -3,12 +3,13 @@
 Matriz de **comportamentos indesejados** observados ou previstos
 no método, com a regra correta e o mecanismo de mitigação no
 andaime. Cada profile (`master.md`, `project-orchestrator.md`,
-`atomic-agent.md`) referencia este doc.
+`atomic-agent.md`) referencia este doc. Os nomes canônicos de papéis e
+conceitos seguem [`ontology.md`](ontology.md) (linguagem ubíqua).
 
 **Convenção:** ❌ = nunca; ✅ = fazer assim; 🛡️ = onde no andaime
 isso é mitigado.
 
-> **Atualização v0.3+ — workers stateless.** Orq locais não são mais
+> **Atualização v0.3+ — workers stateless.** Orqs não são mais
 > sessões Claude vivas; são processos efêmeros disparados pelo
 > `commd` quando uma mensagem cai no inbox. Implicações:
 > - **L8** (polling do orq) e **L12** (supervision tick do orq) viram
@@ -26,14 +27,14 @@ isso é mitigado.
 
 ❌ `gh issue create ...` partindo da sessão master.
 ✅ Mestre **dispara briefing** via `msg.sh <repo> briefing ...`.
-   Orq local é quem materializa como issue.
+   Orq é quem materializa como issue.
 🛡️ Profile master.md proíbe explicitamente; profile do orq
    local instrui que **só** ele cria issues do repo dele.
 
 ### M2 — Tocar código de produção
 
 ❌ Editar `.py`, `.ts`, `bot.py`, etc nos 3 repos.
-✅ Vira tarefa pro orq local, mesmo que trivial.
+✅ Vira tarefa pro orq, mesmo que trivial.
 🛡️ Profile master.md tem "constraints duras" no topo.
 
 ### M3 — Disparar briefing sem aprovação do Rick
@@ -45,7 +46,7 @@ isso é mitigado.
 🛡️ Anti-padrão registrado; é o único ponto de aprovação humana
    antes do PR final.
 
-### M4 — Conversar com orq local fora do `msg.sh`
+### M4 — Conversar com orq fora do `msg.sh`
 
 ❌ `tmux send-keys -t mmb:cockpit "..."` manual.
 ✅ Sempre via `msg.sh` — garante audit trail + frontmatter
@@ -68,7 +69,7 @@ isso é mitigado.
 
 ❌ Mestre pega tarefa single-repo simples e tenta "resolver
    rápido" rodando comandos no repo.
-✅ Mesmo single-repo trivial vai pro orq local. Sempre.
+✅ Mesmo single-repo trivial vai pro orq. Sempre.
 🛡️ Anti-padrão atualizado pós-teste de fogo (v2 rejeitava
    single-repo; v3 dispatcha mas Mestre nunca executa).
 
@@ -91,7 +92,7 @@ isso é mitigado.
 🛡️ Perder a janela de aprendizado do épico é desperdício de
    sinal. Anti-overengineering exige Rick no loop.
 
-## Orq Local
+## Orquestrador de projeto
 
 ### L1 — Conversar direto com Rick
 
@@ -114,7 +115,7 @@ isso é mitigado.
 ❌ (a) Criar issue, spawnar atômico, esperar PR — sem nenhuma
    mensagem pro mestre. Mestre fica cego.
 ❌ (b) Mandar status com body em prosa livre sem os campos
-   obrigatórios. Worker-master cai em heurística e escala
+   obrigatórios. Triador do Mestre cai em heurística e escala
    pending-human por falso positivo (caso real: épico dark-mode
    2026-05-16 — 2 status `issue-criada-N` sem `issue_url` foram
    escalados).
@@ -129,7 +130,7 @@ isso é mitigado.
      (após task-end/task-abort) — campos: `pr_url`, `pr_number`,
      `issue_number`, `merged_at`, `last_in_epic`.
 🛡️ Profile project-orchestrator.md lista os marcos; `protocol.md`
-   define o schema canônico. Worker-master faz matching exato
+   define o schema canônico. Triador do Mestre faz matching exato
    sobre os campos — sem schema, não há matching seguro.
 
 ### L6 — Escalar pergunta trivial pro Mestre
@@ -216,7 +217,7 @@ isso é mitigado.
 
 ❌ Refatorar arquivo vizinho "já que estou aqui".
 ✅ Escopo do brief é lei. Anota oportunidades no PR body
-   pro orq local decidir.
+   pro orq decidir.
 🛡️ Profile atomic-agent.md: "Escopo do brief vence" +
    sub-issue tem seção "Fora" explícita.
 
@@ -246,7 +247,7 @@ isso é mitigado.
 ❌ Brief tem "decidir entre A e B" e atômico escolhe sem
    sinalizar.
 ✅ **Pare e saia sem agir.** Você não tem canal pra perguntar.
-   Sua não-entrega sinaliza ao orq local que brief estava ruim.
+   Sua não-entrega sinaliza ao orq que brief estava ruim.
 🛡️ Profile: "Pare e saia sem agir. Não chute, não escale."
 
 ### A8 — Continuar trabalhando após `open-pr.sh`
@@ -280,7 +281,7 @@ isso é mitigado.
 ❌ Pré-flight falhou / hook quebrou / decisão em aberto → sair
    silenciosamente (atômico não tem `msg.sh`, mas tem `log.sh`).
 ✅ Antes de sair: `log.sh critical <event-slug> "<motivo>"
-   --epic <slug> --task <id>`. Orq local diagnostica
+   --epic <slug> --task <id>`. Orq diagnostica
    imediatamente via `review-cycle` ou `journal.jsonl`.
 🛡️ Atômico sem voz = causa-raiz mascarada. log.sh é seu único
    canal de saída estruturada.
@@ -330,7 +331,7 @@ isso é mitigado.
 ❌ Spawnar 2 tasks que tocam arquivo X simultaneamente sem
    coordenação.
 ✅ Briefing declara "Conflito potencial com" outras tasks.
-   Orq local sequencializa, ou se forem inevitavelmente
+   Orq sequencializa, ou se forem inevitavelmente
    paralelos, último a mergear rebaseia.
 🛡️ Template `task-briefing.md` tem seção "Conflito potencial
    com". `check-deps.sh` verifica deps mergeadas.
@@ -368,7 +369,7 @@ um destes guardrails:
 
 - Quando um novo padrão indesejado for observado: adicione
   aqui PRIMEIRO, depois reforce o profile relevante.
-- Numere por camada (M para mestre, L para orq local, A para
+- Numere por camada (M para mestre, L para orq, A para
   atômico, X para cross-cutting) pra facilitar referência
   cruzada.
 - Cada item: ❌ comportamento, ✅ correto, 🛡️ mitigação.
@@ -377,6 +378,6 @@ um destes guardrails:
 
 - [`protocol.md`](protocol.md) — protocolo de comunicação.
 - [`profiles/master.md`](profiles/master.md) — papel do mestre.
-- [`profiles/project-orchestrator.md`](profiles/project-orchestrator.md) — papel do orq local.
+- [`profiles/project-orchestrator.md`](profiles/project-orchestrator.md) — papel do orq.
 - [`profiles/atomic-agent.md`](profiles/atomic-agent.md) — papel do atômico.
 - [`README.md`](README.md) — visão geral do andaime.

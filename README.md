@@ -8,7 +8,7 @@ Método operacional + sistema de observabilidade para desenvolvimento de softwar
 
 ## A proposta
 
-O MMB investiga uma pergunta prática: **é possível conduzir o ciclo completo de desenvolvimento de software — do levantamento de requisitos ao PR mergeado — usando agentes Claude autônomos, com um humano apenas nos pontos de decisão estratégica?**
+O MMB investiga uma pergunta prática: **é possível conduzir o fluxo completo de desenvolvimento de software — do levantamento de requisitos ao PR mergeado — usando agentes Claude autônomos, com um humano apenas nos pontos de decisão estratégica?**
 
 O ecossistema tem quatro repos coordenados:
 
@@ -179,6 +179,7 @@ state/heartbeats/*.alive  ─┘
 ├── CLAUDE.md                            ← instruções para a sessão Master
 ├── .tooling/
 │   ├── README.md                        ← detalhe do método (este nível)
+│   ├── ontology.md                       ← linguagem ubíqua (vocabulário canônico)
 │   ├── source-of-truth.md               ← contrato canônico do logger
 │   ├── protocol.md                      ← protocolo mailbox+ping (legado: tmux)
 │   ├── guardrails.md                    ← comportamentos vetados por papel

@@ -29,11 +29,12 @@ um exige editar `targets.json` + atualizar docs adjacentes.
 
 ## Leia antes de operar (em ordem)
 
-1. [`.tooling/profiles/master.md`](.tooling/profiles/master.md) — seu modus operandi
-2. [`.tooling/protocol.md`](.tooling/protocol.md) — protocolo de mensageria (mailbox, schema, fluxos)
-3. [`.tooling/guardrails.md`](.tooling/guardrails.md) — comportamentos vetados por papel
-4. [`.tooling/source-of-truth.md`](.tooling/source-of-truth.md) — contrato com o logger
-5. [`.tooling/README.md`](.tooling/README.md) — índice e visão geral
+1. [`.tooling/ontology.md`](.tooling/ontology.md) — linguagem ubíqua (vocabulário canônico do domínio)
+2. [`.tooling/profiles/master.md`](.tooling/profiles/master.md) — seu modus operandi
+3. [`.tooling/protocol.md`](.tooling/protocol.md) — protocolo de mensageria (mailbox, schema, fluxos)
+4. [`.tooling/guardrails.md`](.tooling/guardrails.md) — comportamentos vetados por papel
+5. [`.tooling/source-of-truth.md`](.tooling/source-of-truth.md) — contrato com o logger
+6. [`.tooling/README.md`](.tooling/README.md) — índice e visão geral
 
 Não tente operar sem ler `master.md` e `protocol.md` antes.
 
@@ -42,9 +43,9 @@ Não tente operar sem ler `master.md` e `protocol.md` antes.
 - **Não toca código de produção** dos targets nem do próprio andaime
   sem aviso explícito ao Rick e aprovação dele.
 - **Não cria issues nem PRs** no GitHub — quem materializa sub-issue
-  é o worker do orq local (`create-task-issue.sh`); quem abre PR é o
+  é o worker do orq (`create-task-issue.sh`); quem abre PR é o
   atômico (`open-pr.sh`).
-- Toda comunicação com orq local passa por **`msg.sh`**; nunca
+- Toda comunicação com orq passa por **`msg.sh`**; nunca
   `tmux send-keys` direto, nunca edit manual em `inbox/`.
 - GitHub é fonte da verdade do estado em-voo; `inbox/` é audit trail;
   `mmb-logger` é projeção retrospectiva (não autoritativa).

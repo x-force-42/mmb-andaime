@@ -8,10 +8,13 @@
 > `claude -p` (modo print), processam UMA mensagem e morrem.
 >
 > Implicações:
-> - Orq locais não são mais sessões Claude vivas; tabs `cockpit/aquarium/logger`
+> - Orqs não são mais sessões Claude vivas; tabs `cockpit/aquarium/logger`
 >   do tmux viram só `tail -F` dos logs de worker.
 > - Master continua sessão Claude interativa (Rick conversa com ele).
 > - Atômicos continuam como estavam (panes efêmeros, open-pr.sh, kill-pane).
+
+> **Vocabulário canônico:** nomes de papéis e conceitos seguem
+> [`ontology.md`](ontology.md) (linguagem ubíqua).
 > - `msg.sh` continua sendo o helper único de envio — mas só grava
 >   arquivo; não faz mais `tmux send-keys`.
 >
@@ -102,10 +105,10 @@ created: <ISO8601 UTC>
 
 | Type | Quem envia | Pra quem | Pra quê |
 |---|---|---|---|
-| `briefing` | master | orq local | Trabalho novo: faça issue + spawn atômico |
-| `question` | orq local | master | Brief ambíguo / decisão fora do meu escopo |
-| `answer` | master | orq local | Resposta a uma `question` |
-| `status` | orq local | master | Marco: issue criada / PR aberto / PR mergeado / task fechada |
+| `briefing` | master | orq | Trabalho novo: faça issue + spawn atômico |
+| `question` | orq | master | Brief ambíguo / decisão fora do meu escopo |
+| `answer` | master | orq | Resposta a uma `question` |
+| `status` | orq | master | Marco: issue criada / PR aberto / PR mergeado / task fechada |
 | `error` | qualquer | master | Algo quebrou: spawn falhou, push rejeitado, etc |
 | `propose` | filho | parent | "sugiro estender escopo / mudar abordagem" (v0.1+) |
 | `accept-proposal` | parent | filho | "aceito a proposta, prossiga" (v0.1+) |
@@ -117,7 +120,7 @@ created: <ISO8601 UTC>
 Mensagens `type: status` carregam marcos do ciclo de vida de uma task.
 O `subject` segue convenção `<marco>-<N>`, onde `N` é o número da
 issue/PR no GitHub. O **body** tem payload obrigatório por marco —
-permite ao worker-master fazer matching exato sem heurística, sem
+permite ao triador do Mestre fazer matching exato sem heurística, sem
 escalar pending-human por falso positivo.
 
 Payload é markdown livre, mas precisa **conter literalmente** os
@@ -126,7 +129,7 @@ campos listados abaixo (uma linha por campo no padrão
 
 #### `status: issue-criada-<N>`
 
-Emitido pelo orq local após `gh issue create` materializar a
+Emitido pelo orq após `gh issue create` materializar a
 sub-issue do épico.
 
 | Campo | Forma | Obrigatório |
@@ -148,7 +151,7 @@ Atômico 1.1 spawnado em worktree mmb-cockpit/.worktrees/1.1-dark-mode.
 
 #### `status: pr-aberto-<N>`
 
-Emitido pelo orq local após detectar que o atômico abriu PR (ou
+Emitido pelo orq após detectar que o atômico abriu PR (ou
 emitido pelo próprio atômico via `open-pr.sh`, dependendo da fase).
 `<N>` é o número do **PR**.
 
@@ -161,13 +164,13 @@ emitido pelo próprio atômico via `open-pr.sh`, dependendo da fase).
 
 Notas:
 - Evidência literal da suíte mora no **PR body** (guardrail A11) —
-  status só carrega o veredicto resumido. Worker-master usa
+  status só carrega o veredicto resumido. Triador do Mestre usa
   `suite_status` pra decidir se escala (`vermelha`/`pulada` →
   pending-human; `verde` → digest).
 
 #### `status: task-fechada-<id>` / `status: pr-mergeado-<N>`
 
-Emitido pelo orq local após observar merge do PR + cleanup do
+Emitido pelo orq após observar merge do PR + cleanup do
 worktree (`task-end.sh`).
 
 | Campo | Forma | Obrigatório |
@@ -178,13 +181,13 @@ worktree (`task-end.sh`).
 | `merged_at` | ISO8601 UTC do merge (de `gh pr view`) | sim |
 | `last_in_epic` | `true` \| `false` — última task do épico? | sim |
 
-`last_in_epic: true` sinaliza ao worker-master que pode propor
+`last_in_epic: true` sinaliza ao triador do Mestre que pode propor
 fechamento do épico no próximo digest pro Mestre.
 
 #### Status sem schema
 
 `status: <marco>-...` cujo prefixo não esteja na tabela acima é
-tratado como livre. Worker-master pode logar `warn` mas não escala.
+tratado como livre. Triador do Mestre pode logar `warn` mas não escala.
 Adicionar novo marco aqui antes de emitir do orq.
 
 #### Por que schema mínimo, não JSON
@@ -192,7 +195,7 @@ Adicionar novo marco aqui antes de emitir do orq.
 Mensagens são markdown lidas por humanos durante debug. JSON puro
 quebra o "abro o arquivo e entendo" — chave-valor em linhas separadas
 preserva legibilidade e é trivial de parsear via grep/awk no
-worker-master.
+triador do Mestre.
 
 ### Mapeamento informal → FIPA-ACL (v0.1+)
 
@@ -215,8 +218,8 @@ FIPA-ACL assim:
 ## Polling-on-every-turn é a garantia de entrega (v0.1+)
 
 > **v0.3+:** vale para o **Master interativo** (sessão viva) e
-> para atômicos enquanto rodam. **Workers stateless (master-worker
-> e project-orchestrator) NÃO fazem polling** — são invocados pelo
+> para atômicos enquanto rodam. **Workers stateless (triador do Mestre
+> e orquestrador de projeto) NÃO fazem polling** — são invocados pelo
 > `commd` com o caminho da mensagem como parâmetro do `worker.sh`,
 > processam aquela mensagem e morrem. O texto abaixo descreve o
 > contrato original (v0.1) que ainda vale para sessões vivas.
@@ -350,7 +353,7 @@ master:
   4. msg.sh aquarium briefing <slug> <aquarium-briefing>  thread=<slug>
   5. (se houver deps cross-repo, briefings carregam requires)
 
-cada orq local: idem fluxo 1, em paralelo
+cada orq: idem fluxo 1, em paralelo
 master: agrega status pelo thread
 ```
 
@@ -425,7 +428,7 @@ de agentes**:
 - Orq de projeto: `cockpit` / `aquarium` / `logger`
 - Atômico: `<repo-short>-<task-id>` (ex: `cockpit-X1`)
 
-**Supervision tick:** orq local roda `agents.sh check-children
+**Supervision tick:** orq roda `agents.sh check-children
 <seu-id>` periodicamente (ver profile do orq). Filhos com
 heartbeat > `MMB_HEARTBEAT_TIMEOUT` (default 600s) são
 considerados zumbis → `task-abort.sh` automático + `error`

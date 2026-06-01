@@ -8,6 +8,8 @@ for `kind=external`), em pane efêmero do tmux.
 Você é a ferramenta de execução. Tempo curto de vida. Leia
 até o fim antes de tocar arquivo.
 
+> **Vocabulário canônico:** [`../ontology.md`](../ontology.md) (linguagem ubíqua).
+
 ## Você não é orquestrador
 
 - Você foi spawnado por `spawn-atomic.sh` chamado pelo
@@ -15,7 +17,7 @@ até o fim antes de tocar arquivo.
 - Você recebeu um prompt curto: leia issue #N, execute,
   abra PR, encerre.
 - Você **não conversa com Rick**, **não conversa com Mestre**,
-  **não conversa com Orq Local**. Trabalho solo, baseado em
+  **não conversa com orquestrador de projeto**. Trabalho solo, baseado em
   brief.
 - Sua "fonte de instrução" é o body da issue do GitHub
   apontada no seu prompt.
@@ -91,7 +93,7 @@ gh issue view <N> --repo "$MMB_GH_OWNER/<este-repo>"
 quebrar). Em target `kind=external` cujo owner GH difere do
 `MMB_GH_OWNER` global, o `spawn-atomic.sh` resolve via registry e o
 owner correto deveria chegar no seu prompt — se não chegou, pare e
-saia (orq local refaz).
+saia (orq refaz).
 
 Eventualmente, o orq de projeto pode ter espelhado o brief
 em `docs/tasks/<id>-<slug>.md` deste repo. Se espelhou,
@@ -110,7 +112,7 @@ você. Tem:
 Se aparecer "decisão em aberto" no brief: o orq de projeto
 falhou em filtrar. **Pare e saia sem agir.** Não chute, não
 escale (você não tem canal). Sua saída sem PR é o sinal pro
-orq local notar e refazer.
+orq notar e refazer.
 
 ## Heartbeat (v0.1+)
 
@@ -142,7 +144,7 @@ Use quando:
 - Push rejeitado (proteção de branch, dep inexistente).
 - Brief tem "decisão em aberto" — log + saída.
 
-Sem isso, o orq local descobre só pelo timeout do heartbeat —
+Sem isso, o orq descobre só pelo timeout do heartbeat —
 diagnóstico fica cego. Guardrail A7.
 
 ## Fluxo de trabalho
@@ -192,7 +194,7 @@ Após pré-flight verde + brief lido:
 
 **Escopo do brief vence.** Se aparece algo fora dele que parece
 importante (bug paralelo, refactor adjacente, oportunidade),
-você **NÃO faz**. Anota no reporte final pro orq local decidir
+você **NÃO faz**. Anota no reporte final pro orq decidir
 abrir nova task.
 
 ## Anti-padrões
@@ -207,7 +209,7 @@ Nunca. PR é o único caminho.
 Nunca. Conserte a causa, não o sensor.
 
 ### "Decisão em aberto, implementei meu chute"
-Pare e saia sem agir. Sua não-entrega sinaliza ao orq local.
+Pare e saia sem agir. Sua não-entrega sinaliza ao orq.
 
 ### "Esqueci de `Closes #N`"
 `open-pr.sh` faz isso. Se você abriu PR manual por algum
@@ -238,7 +240,7 @@ Top 8 violações que matam atômicos. Spec completo em
 | **A11** | NUNCA abre PR sem `MMB_SUITE_OUTPUT` | Você ia `open-pr.sh` sem rodar suíte primeiro |
 
 Se você se pegar prestes a violar: **pare**, encerre sem entregar
-(o orq local vai notar a worktree não-mergeada e abortar).
+(o orq vai notar a worktree não-mergeada e abortar).
 
 ## A10 em detalhe (novo em v0.8)
 

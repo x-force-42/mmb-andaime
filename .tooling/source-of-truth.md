@@ -12,6 +12,10 @@ contrato entre três peças do ecossistema MMB:
 Convenções deste doc vinculam os três. Quebrar este contrato é quebrar o
 método.
 
+> **Vocabulário canônico:** os nomes de conceitos (épico, ciclo, evento,
+> papéis) seguem [`ontology.md`](ontology.md) (linguagem ubíqua). Este doc
+> governa a *semântica* da projeção; `ontology.md` governa a *escolha do nome*.
+
 ## Princípio operacional
 
 Três frases que governam o resto:
@@ -185,7 +189,7 @@ A âncora resolve o casamento determinístico entre nascimento do ciclo
 
 ### Formato
 
-Todo `gh issue create` chamado pelo orq local DEVE prepender ao body o
+Todo `gh issue create` chamado pelo orq DEVE prepender ao body o
 bloco:
 
 ```html
@@ -211,7 +215,7 @@ divergência vira warning ruidoso.
 
 ### Quem escreve
 
-Orq local, via wrapper `.tooling/bin/create-task-issue.sh` (a criar na
+Orquestrador de projeto, via wrapper `.tooling/bin/create-task-issue.sh` (a criar na
 fase 0). Wrapper recebe `(repo, briefing-path, epic-slug)`, lê frontmatter
 pra montar a chave, prepende ao body, chama `gh issue create`. Profile do
 orq passa a referenciar o wrapper em vez de `gh issue create` direto.
@@ -549,8 +553,8 @@ warning ruidoso, não silêncio.
 
 | Convenção | Quem honra | Como validar |
 |---|---|---|
-| Issue carrega labels `task`, `project:<repo>`, `epic:<slug>` | orq local | reconciler grep nos labels; ausente → warning |
-| Issue body começa com âncora `mmb-cycle-key` | orq local (wrapper) | reconciler regex no body; ausente → fallback + warning |
+| Issue carrega labels `task`, `project:<repo>`, `epic:<slug>` | orq | reconciler grep nos labels; ausente → warning |
+| Issue body começa com âncora `mmb-cycle-key` | orq (wrapper) | reconciler regex no body; ausente → fallback + warning |
 | PR body contém `Closes #<N>` | atômico (`open-pr.sh` valida `GH_SUBISSUE` e injeta automaticamente; fail-loud antes do push se ausente/inválido) | reconciler grep no body do PR; ausente → warning `pr-without-closes` (cenário só possível pra PRs criados fora do método) |
 | Branch = `task/<task-id>-<slug>` | atômico (`task-start.sh`) | reconciler valida `pr.headRefName` |
 | Worktree = `<repo>/.worktrees/<task-id>-<slug>` | atômico | usado pra encontrar transcript Claude (fase 4) |
@@ -705,7 +709,7 @@ Quebra de UI em `NULL` é bug do cockpit, não do logger. Os tipos em
 1. Este documento existir e estar revisado.
 2. Implementar `.tooling/bin/create-task-issue.sh` (wrapper que prepende
    âncora ao body).
-3. Atualizar profile do orq local pra referenciar o wrapper.
+3. Atualizar profile do orq pra referenciar o wrapper.
 4. Validar empiricamente os 5 inputs (GH issues/PRs reais com labels,
    transcript Claude parseável).
 5. Decidir se custo será automatizado (fase 4 sim/não) e registrar.
@@ -813,7 +817,7 @@ verdade nasce, é onde ela assenta.
                        │
                        ↓ commd → worker stateless
                        │
-              orq local cria issue   (create-task-issue.sh com âncora)
+              orq cria issue   (create-task-issue.sh com âncora)
                        ↓
               spawn-atomic.sh → atômico em worktree
                        ↓
