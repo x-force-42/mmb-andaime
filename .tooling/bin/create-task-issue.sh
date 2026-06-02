@@ -188,6 +188,39 @@ trap 'rm -f "$TMP_BODY"' EXIT
 TARGET_OWNER=$(mmb_target_owner "$REPO_SHORT")
 GH_FULL="$TARGET_OWNER/$REPO"
 
+# ── Idempotência por âncora (H1) ──────────────────────────────────
+# A cycle-key é única por (épico × projeto × created). Se o commd
+# re-despachar este briefing (drain após crash) e o orq rodar de novo,
+# NÃO devemos criar uma 2ª issue. Procura issue existente cujo corpo
+# carrega exatamente esta âncora; se achar, devolve o número e sai 0.
+#
+# Filtra por label epic:<thread> (barato — escopa ao épico) e casa a
+# âncora exata em python3 (já é dependência via lib/targets.sh) —
+# robusto a escaping/newlines do corpo, sem depender da tokenização do
+# search do GitHub. Best-effort: se o list falhar (rede), cai pro
+# create (comportamento antigo) em vez de bloquear criação legítima.
+EXISTING_ISSUE=$(gh issue list --repo "$GH_FULL" --state all \
+    --label "epic:${THREAD}" --limit 200 --json number,body 2>/dev/null \
+  | python3 -c '
+import sys, json
+try:
+    items = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+key = sys.argv[1]
+for it in items:
+    if key in (it.get("body") or ""):
+        print(it.get("number", ""))
+        break
+' "mmb-cycle-key: $CYCLE_KEY" 2>/dev/null || true)
+
+if [ -n "$EXISTING_ISSUE" ]; then
+  echo "↺ Issue já existe pra cycle-key '$CYCLE_KEY': #$EXISTING_ISSUE" >&2
+  echo "  (idempotente — pulando gh issue create)" >&2
+  printf '%s\n' "$EXISTING_ISSUE"
+  exit 0
+fi
+
 echo "→ Criando issue em $GH_FULL" >&2
 echo "  title:      $TITLE" >&2
 echo "  labels:     $LABELS" >&2

@@ -154,14 +154,28 @@ TMP_BODY=$(mktemp)
 COMMITS_LIST=$(git log "$DEFAULT_BRANCH..HEAD" --no-merges --pretty=format:'- %s')
 mmb_build_pr_body "$SUBISSUE" "$COMMITS_LIST" "$WORKTREE_NAME" "$SUITE_OUTPUT" > "$TMP_BODY"
 
-echo "→ gh pr create (base: $DEFAULT_BRANCH)..."
-PR_URL=$(gh pr create \
-  --repo "$GH_REPO" \
-  --title "$PR_TITLE" \
-  --body-file "$TMP_BODY" \
-  --base "$DEFAULT_BRANCH" \
-  --head "$BRANCH" \
-  $DRAFT_FLAG)
+# Idempotência (H1): se já existe PR pra esta branch (reprocesso /
+# re-run após crash), reusa o existente em vez de chamar gh pr create —
+# que erraria com "a pull request already exists". Best-effort: se o
+# list falhar, cai pro create. `gh --jq` usa o jq embutido no gh (sem
+# dependência externa).
+EXISTING_PR=$(gh pr list --repo "$GH_REPO" --head "$BRANCH" --state all \
+  --json url --jq '.[0].url // empty' 2>/dev/null || true)
+
+if [ -n "$EXISTING_PR" ]; then
+  PR_URL="$EXISTING_PR"
+  echo "↺ PR já existe pra branch $BRANCH: $PR_URL"
+  echo "  (idempotente — pulando gh pr create)"
+else
+  echo "→ gh pr create (base: $DEFAULT_BRANCH)..."
+  PR_URL=$(gh pr create \
+    --repo "$GH_REPO" \
+    --title "$PR_TITLE" \
+    --body-file "$TMP_BODY" \
+    --base "$DEFAULT_BRANCH" \
+    --head "$BRANCH" \
+    $DRAFT_FLAG)
+fi
 
 rm -f "$TMP_BODY"
 
