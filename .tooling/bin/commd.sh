@@ -165,6 +165,80 @@ move_msg() {
   return 1
 }
 
+# ── Retry-budget / dead-letter (H3) ──────────────────────────────
+# Falhas RETENTÁVEIS (worker-exit genérico; move pra .done/.dead que
+# falhou) não vão direto pra .dead/: ganham um sidecar <msg>.attempts com
+# contador + ready_at (backoff) e são re-tentadas pelo poll
+# (reconcile_retries_once) até MMB_MAX_ATTEMPTS. Esgotado → .dead/ com
+# evento commd-dead-letter (reason + attempts). MMB_MAX_ATTEMPTS=0 desliga
+# o retry (comportamento pré-H3). Timeout/watchdog-kill (124/137/143) NÃO
+# são retentados nesta etapa (política H3).
+#
+# Sidecar (1 linha): "<attempts> <ready_at_epoch> <op> <target> <rc> <reason>"
+#   op ∈ dispatch|move  (move = re-tentar só o arquivamento, SEM rodar o
+#                        worker de novo — caso de move-failed)
+#   target ∈ done|dead|-
+: "${MMB_MAX_ATTEMPTS:=3}"
+: "${MMB_RETRY_BACKOFF_BASE:=60}"
+
+retry_enabled() { [ "${MMB_MAX_ATTEMPTS:-3}" -gt 0 ]; }
+
+# Backoff progressivo linear, explícito e testável: base * attempts.
+retry_backoff_seconds() { echo $(( ${MMB_RETRY_BACKOFF_BASE:-60} * $1 )); }
+
+# Lê sidecar pros globals RA_*. Retorna 1 se ausente/ilegível (RA_* zerados).
+retry_sidecar_read() {
+  RA_ATTEMPTS=0; RA_READY_AT=0; RA_OP="-"; RA_TARGET="-"; RA_RC=0; RA_REASON="-"
+  [ -f "$1" ] || return 1
+  read -r RA_ATTEMPTS RA_READY_AT RA_OP RA_TARGET RA_RC RA_REASON < "$1" 2>/dev/null || return 1
+  : "${RA_ATTEMPTS:=0}" "${RA_READY_AT:=0}"
+  return 0
+}
+
+# Escreve sidecar. <sidecar> <attempts> <ready_at> <op> <target> <rc> <reason>
+retry_sidecar_write() {
+  printf '%s %s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" "$7" > "$1"
+}
+
+# Move pra .dead/ ao esgotar o orçamento de retries. Se nem o move pra
+# .dead funcionar (FS quebrado), é move-exhausted: evento critical e o
+# arquivo permanece em .processing/ (não há pra onde mover).
+# <working_file> <dest> <basename> <reason> <attempts>
+to_dead_letter() {
+  local wf="$1" dest="$2" basename="$3" reason="$4" attempts="$5"
+  local sidecar="${wf}.attempts"
+  if move_msg "$wf" "$INBOX_BASE/$dest/.dead" "$dest" "$basename" "dead"; then
+    rm -f "$sidecar"
+    journal commd-dead-letter "$dest" "$basename" \
+      "sev=error" "kind=$reason" "attempts=$attempts"
+    log "dead-letter dest=$dest file=$basename reason=$reason attempts=$attempts (esgotou retries)"
+  else
+    journal commd-dead-letter "$dest" "$basename" \
+      "sev=critical" "kind=move-exhausted" "attempts=$attempts"
+    log "dead-letter IMPOSSÍVEL dest=$dest file=$basename (move pra .dead falhou; FS?)"
+  fi
+}
+
+# Incrementa attempts + agenda retry com backoff, OU manda pra dead-letter
+# se o orçamento esgotou. Usado por finalize_dispatch e reconcile_retries_once.
+# <sidecar> <working_file> <dest> <basename> <op> <target> <rc> <reason>
+schedule_retry_or_dead() {
+  local sidecar="$1" wf="$2" dest="$3" basename="$4" op="$5" target="$6" rc="$7" reason="$8"
+  local attempts now ready
+  retry_sidecar_read "$sidecar"
+  attempts=$(( RA_ATTEMPTS + 1 ))
+  if [ "$attempts" -lt "${MMB_MAX_ATTEMPTS:-3}" ]; then
+    now=$(date +%s)
+    ready=$(( now + $(retry_backoff_seconds "$attempts") ))
+    retry_sidecar_write "$sidecar" "$attempts" "$ready" "$op" "$target" "$rc" "$reason"
+    journal commd-retry-scheduled "$dest" "$basename" \
+      "sev=warn" "kind=$reason" "attempts=$attempts" "ready_at=$ready" "op=$op"
+    log "retry agendado dest=$dest file=$basename attempt=$attempts/${MMB_MAX_ATTEMPTS} op=$op ready_at=$ready"
+    return 0
+  fi
+  to_dead_letter "$wf" "$dest" "$basename" "$reason" "$attempts"
+}
+
 # Finaliza o dispatch após o worker retornar: move a mensagem pro subdir
 # de lifecycle correto conforme o rc e journaliza. Extraído de dispatch()
 # (H2) pra ser testável isoladamente. Estado honesto: commd-done/-dead só
@@ -174,37 +248,70 @@ move_msg() {
 # Uso: finalize_dispatch <rc> <working_file> <dest> <basename>
 finalize_dispatch() {
   local rc="$1" working_file="$2" dest="$3" basename="$4"
+  local sidecar="${working_file}.attempts"
   local thread err_id err_kind
+
   if [ "$rc" -eq 0 ]; then
     if move_msg "$working_file" "$INBOX_BASE/$dest/.done" "$dest" "$basename" "done"; then
+      rm -f "$sidecar"                       # H3: .done neutraliza o sidecar de retry
       journal commd-done "$dest" "$basename"
       journal commd-worker-done "$dest" "$basename"
+    elif retry_enabled; then
+      # move-failed APÓS sucesso → re-tenta só o arquivamento (op=move).
+      # NÃO reexecuta o worker: ele já concluiu (e re-rodar poderia
+      # re-spawnar atômico, fora da idempotência do H1).
+      schedule_retry_or_dead "$sidecar" "$working_file" "$dest" "$basename" \
+        "move" "done" 0 "move-failed"
     fi
-  elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
-    # Captura thread/epic ANTES de mover o arquivo pra .dead/ (caminho muda).
-    thread=$(extract_thread "$working_file")
-    err_id=$(error_id "$dest" "worker-timeout")
-    move_msg "$working_file" "$INBOX_BASE/$dest/.dead" "$dest" "$basename" "dead" \
-      && journal commd-dead "$dest" "$basename"
-    journal commd-worker-timeout "$dest" "$basename" \
-      "sev=error" "kind=worker-timeout" "epic=$thread" "id=$err_id" \
-      "timeout_seconds=$MMB_WORKER_TIMEOUT"
-    log "worker TIMEOUT (rc=$rc) dest=$dest file=$basename"
-  else
-    # Distingue watchdog-kill (SIGTERM via pkill, rc=143) de outros exits.
+    return
+  fi
+
+  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ] || [ "$rc" -eq 143 ]; then
+    # Terminal: timeout (124/137) e watchdog-kill (143) NÃO entram em
+    # retry nesta etapa (política H3) — vão direto pra .dead/.
+    # Captura thread/epic ANTES de mover (caminho muda).
     thread=$(extract_thread "$working_file")
     if [ "$rc" -eq 143 ]; then
       err_kind="worker-watchdog-kill"
     else
-      err_kind="worker-exit"
+      err_kind="worker-timeout"
     fi
     err_id=$(error_id "$dest" "$err_kind")
+    if move_msg "$working_file" "$INBOX_BASE/$dest/.dead" "$dest" "$basename" "dead"; then
+      rm -f "$sidecar"
+      journal commd-dead "$dest" "$basename"
+    elif retry_enabled; then
+      # Só o arquivamento falhou → re-tenta o move (não o worker).
+      schedule_retry_or_dead "$sidecar" "$working_file" "$dest" "$basename" \
+        "move" "dead" "$rc" "move-failed"
+    fi
+    # Verdade sobre o worker: emitida sempre, independe de onde o arquivo parou.
+    if [ "$err_kind" = "worker-watchdog-kill" ]; then
+      journal commd-worker-exit "$dest" "$basename" \
+        "sev=error" "kind=$err_kind" "epic=$thread" "id=$err_id" "exit_code=$rc"
+    else
+      journal commd-worker-timeout "$dest" "$basename" \
+        "sev=error" "kind=$err_kind" "epic=$thread" "id=$err_id" \
+        "timeout_seconds=$MMB_WORKER_TIMEOUT"
+    fi
+    log "worker TERMINAL (rc=$rc kind=$err_kind) dest=$dest file=$basename"
+    return
+  fi
+
+  # rc genérico (≠0, não-terminal) → worker-exit RETENTÁVEL (pode ser
+  # falha transitória de CLI/API/modelo).
+  thread=$(extract_thread "$working_file")
+  err_id=$(error_id "$dest" "worker-exit")
+  journal commd-worker-exit "$dest" "$basename" \
+    "sev=error" "kind=worker-exit" "epic=$thread" "id=$err_id" "exit_code=$rc"
+  log "worker exit-code=$rc dest=$dest file=$basename"
+  if retry_enabled; then
+    schedule_retry_or_dead "$sidecar" "$working_file" "$dest" "$basename" \
+      "dispatch" "-" "$rc" "worker-exit"
+  else
+    # MMB_MAX_ATTEMPTS=0 → comportamento pré-H3: vai direto pra .dead/.
     move_msg "$working_file" "$INBOX_BASE/$dest/.dead" "$dest" "$basename" "dead" \
-      && journal commd-dead "$dest" "$basename"
-    journal commd-worker-exit "$dest" "$basename" \
-      "sev=error" "kind=$err_kind" "epic=$thread" "id=$err_id" \
-      "exit_code=$rc"
-    log "worker exit-code=$rc kind=$err_kind dest=$dest file=$basename"
+      && { rm -f "$sidecar"; journal commd-dead "$dest" "$basename"; }
   fi
 }
 
@@ -266,9 +373,10 @@ dispatch() {
     *" $dest "*) ;;
     *) log "skip: dest desconhecido em '$file' (dest=$dest)"; return ;;
   esac
-  # Arquivos ocultos = infra (.lock, .gitkeep, etc)
+  # Arquivos ocultos = infra (.lock, .gitkeep). Sidecars de retry (H3,
+  # *.attempts) não são mensagens — geridos por reconcile_retries_once.
   case "$basename" in
-    .*) return ;;
+    .*|*.attempts) return ;;
   esac
   # Só processa arquivos (não diretórios)
   [ -f "$file" ] || return
@@ -360,7 +468,10 @@ reconcile_processing_once() {
     fi
     while IFS= read -r -d '' f; do
       basename=$(basename "$f")
-      case "$basename" in .*) continue ;; esac
+      case "$basename" in .*|*.attempts) continue ;; esac
+      # Mensagem com sidecar de retry (H3) é gerida por reconcile_retries_once,
+      # que respeita o backoff. O sweep frio não deve competir por ela.
+      [ -f "$f.attempts" ] && continue
       f_mod=$(stat -c %Y "$f" 2>/dev/null || echo "$now")
       age=$((now - f_mod))
       [ "$age" -lt "$min_age" ] && continue   # jovem demais — pode ter worker vivo
@@ -368,6 +479,60 @@ reconcile_processing_once() {
       journal commd-processing-recovered "$d" "$basename" "age_seconds=$age"
       dispatch "$f"
     done < <(find "$INBOX_BASE/$d/.processing" -maxdepth 1 -type f -print0 2>/dev/null)
+  done
+}
+
+# Retry-budget (H3): re-tenta mensagens em .processing/ que falharam de
+# forma retentável e cujo backoff (ready_at no sidecar) já venceu.
+#   op=dispatch → re-roda o worker (dispatch); finalize re-avalia/incrementa.
+#   op=move     → re-tenta SÓ o arquivamento (move_msg direto), sem worker.
+# Esgotou o orçamento → schedule_retry_or_dead encaminha pra dead-letter.
+# Pula dest com worker vivo (heartbeat fresco), como o sweep. Sidecar
+# órfão (mensagem sumiu) é limpo. Desligado se MMB_MAX_ATTEMPTS=0.
+reconcile_retries_once() {
+  retry_enabled || return 0
+  local d sc wf basename now tgtdir hb hb_mod hb_age
+  now=$(date +%s)
+  for d in $(mmb_dests_list); do
+    hb="$STATE_DIR/heartbeat-${d}.txt"
+    if [ -f "$hb" ]; then
+      hb_mod=$(stat -c %Y "$hb" 2>/dev/null || echo 0)
+      hb_age=$((now - hb_mod))
+      [ "$hb_age" -lt "$MMB_WATCHDOG_STALE_SECONDS" ] && continue
+    fi
+    for sc in "$INBOX_BASE/$d/.processing/"*.attempts; do
+      [ -e "$sc" ] || continue            # glob sem match
+      wf="${sc%.attempts}"
+      basename=$(basename "$wf")
+      if [ ! -f "$wf" ]; then
+        rm -f "$sc"                         # sidecar órfão (mensagem sumiu)
+        continue
+      fi
+      retry_sidecar_read "$sc" || continue
+      [ "$now" -ge "$RA_READY_AT" ] || continue   # backoff ainda não venceu
+      if [ "$RA_OP" = "move" ]; then
+        journal commd-retry-attempt "$d" "$basename" \
+          "sev=warn" "attempts=$RA_ATTEMPTS" "op=move" "target=$RA_TARGET"
+        log "retry move dest=$d file=$basename attempt=$RA_ATTEMPTS target=$RA_TARGET"
+        tgtdir="$INBOX_BASE/$d/.$RA_TARGET"
+        if move_msg "$wf" "$tgtdir" "$d" "$basename" "$RA_TARGET"; then
+          rm -f "$sc"
+          if [ "$RA_TARGET" = "done" ]; then
+            journal commd-done "$d" "$basename"
+            journal commd-worker-done "$d" "$basename"
+          else
+            journal commd-dead "$d" "$basename"
+          fi
+        else
+          schedule_retry_or_dead "$sc" "$wf" "$d" "$basename" "move" "$RA_TARGET" "$RA_RC" "$RA_REASON"
+        fi
+      else
+        journal commd-retry-attempt "$d" "$basename" \
+          "sev=warn" "attempts=$RA_ATTEMPTS" "op=dispatch"
+        log "retry dispatch dest=$d file=$basename attempt=$RA_ATTEMPTS"
+        dispatch "$wf"
+      fi
+    done
   done
 }
 
@@ -547,6 +712,7 @@ run_foreground() {
       # Timeout do read -t → safety net.
       reconcile_once
       watchdog_check
+      reconcile_retries_once
       reconcile_processing_once
     else
       # EOF: pipe do inotifywait fechou (processo morreu / SIGPIPE).

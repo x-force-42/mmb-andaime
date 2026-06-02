@@ -93,6 +93,11 @@ journal_event_has commd-move-failed '"sev":"error"' && pass "A2: sev=error" || f
 
 # ── B. finalize_dispatch() ───────────────────────────────────────
 echo "── B. finalize_dispatch() ──"
+# Estado honesto do H2 é a semântica SEM retry. O H3 tornou o retry o
+# default (MMB_MAX_ATTEMPTS=3); aqui fixamos 0 pra testar o caminho H2
+# isolado (worker-exit → .dead direto). O retry tem teste próprio
+# (test-commd-retry.sh).
+MMB_MAX_ATTEMPTS=0
 
 # B1 — rc=0 caminho feliz
 : > "$JOURNAL_LOG"
