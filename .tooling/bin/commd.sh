@@ -65,7 +65,11 @@ else
   JOURNAL_LOCK="$LOG_DIR/.journal.lock"
 fi
 
-mkdir -p "$STATE_DIR" "$LOG_DIR/workers"
+# Backpressure (H5): token-dir de workers em-voo + lock de reserva.
+INFLIGHT_DIR="$STATE_DIR/inflight"
+CONC_LOCK="$STATE_DIR/.concurrency.lock"
+
+mkdir -p "$STATE_DIR" "$LOG_DIR/workers" "$INFLIGHT_DIR"
 [ -f "$JOURNAL_LOG" ] || : > "$JOURNAL_LOG"
 
 # Cria inboxes + subdirs de lifecycle idempotente. Subdirs começam
@@ -350,6 +354,64 @@ cmd_stop() {
   rm -f "$PID_FILE"
 }
 
+# ── Backpressure / teto de concorrência (H5) ─────────────────────
+# dispatch + retry + sweep podem gerar tráfego próprio (re-dispatches no
+# poll). Sem teto, um burst spawna 1 worker por dest (e o sweep/retry
+# vários de uma vez) — N claudes -p simultâneos. MMB_MAX_CONCURRENT limita
+# o total de workers em-voo; se cheio (ou o dest já ocupado), dispatch
+# ADIA: a mensagem fica onde está e é re-elegível no próximo poll. Nunca
+# perde.
+#
+# Mecânica: token-dir em state/inflight/. A reserva acontece no PARENT
+# (dispatch), ANTES do claim e do subshell — assim chamadas sequenciais do
+# laço de sweep enxergam a reserva na hora (sem race check-then-act). O
+# subshell grava seu PID no token e o remove no EXIT. Reaping sob lock:
+# token de worker morto (PID não-vivo) ou reserva órfã (vazia e velha).
+: "${MMB_MAX_CONCURRENT:=4}"
+: "${MMB_INFLIGHT_GRACE:=60}"
+
+# Reapa tokens stale. Chamar SEMPRE sob flock do CONC_LOCK.
+_reap_inflight() {
+  local f pid now mt age
+  now=$(date +%s)
+  for f in "$INFLIGHT_DIR"/*; do
+    [ -e "$f" ] || continue
+    pid=$(cat "$f" 2>/dev/null || true)
+    if [ -n "$pid" ]; then
+      kill -0 "$pid" 2>/dev/null || rm -f "$f"
+    else
+      mt=$(stat -c %Y "$f" 2>/dev/null || echo "$now")
+      age=$((now - mt))
+      [ "$age" -gt "${MMB_INFLIGHT_GRACE:-60}" ] && rm -f "$f"
+    fi
+  done
+}
+
+# Reserva um slot de concorrência (atômico via flock). Ecoa o token e
+# retorna 0 em sucesso. Retorna 2 se o dest já tem worker em-voo (seria
+# serializado pelo flock por-dest mesmo — adia sem gastar slot global).
+# Retorna 1 se o teto global foi atingido. Reserva no parent: a próxima
+# chamada do laço enxerga o token imediatamente.
+reserve_slot() {
+  local d="$1"
+  (
+    flock 9
+    _reap_inflight
+    if [ -n "$(find "$INFLIGHT_DIR" -maxdepth 1 -type f -name "${d}--*" -print -quit 2>/dev/null)" ]; then
+      exit 2
+    fi
+    local count
+    count=$(find "$INFLIGHT_DIR" -maxdepth 1 -type f 2>/dev/null | wc -l)
+    if [ "$count" -ge "${MMB_MAX_CONCURRENT:-4}" ]; then
+      exit 1
+    fi
+    local tok="${d}--${BASHPID}-$(date +%s%N)-$RANDOM"
+    : > "$INFLIGHT_DIR/$tok"
+    printf '%s\n' "$tok"
+    exit 0
+  ) 9>>"$CONC_LOCK"
+}
+
 dispatch() {
   local file="$1"
   # Normaliza path: WSL2/inotifywait às vezes corrompe leading-slash.
@@ -382,6 +444,26 @@ dispatch() {
   [ -f "$file" ] || return
 
   log "dispatch: dest=$dest file=$basename"
+
+  # Backpressure (H5): reserva um slot ANTES do claim. Se cheio ou o dest
+  # já está em-voo, ADIA — a mensagem fica onde está (inbox top-level →
+  # reconcile_once; .processing c/ sidecar → reconcile_retries_once) e o
+  # próximo poll re-tenta. Não perde. Declarar local ANTES de atribuir:
+  # `local x=$(...)` mascara o exit code de $(...).
+  local slot_token rc_reserve
+  slot_token=$(reserve_slot "$dest"); rc_reserve=$?
+  if [ "$rc_reserve" -ne 0 ]; then
+    if [ "$rc_reserve" -eq 2 ]; then
+      log "deferred (dest em-voo): dest=$dest file=$basename"
+      journal commd-dispatch-deferred "$dest" "$basename" "sev=warn" "reason=dest-busy"
+    else
+      log "deferred (teto ${MMB_MAX_CONCURRENT}): dest=$dest file=$basename"
+      journal commd-dispatch-deferred "$dest" "$basename" \
+        "sev=warn" "reason=max-concurrent" "max_concurrent=$MMB_MAX_CONCURRENT"
+    fi
+    return
+  fi
+
   journal commd-dispatch "$dest" "$basename"
 
   # Lock por destinatário; worker roda em background dentro do lock.
@@ -389,6 +471,11 @@ dispatch() {
   local lock="$STATE_DIR/worker-${dest}.lock"
   (
     flock 9
+
+    # H5: libera o slot ao sair (trap) e grava o PID deste subshell no
+    # token (pra _reap_inflight detectar morte sem trap).
+    trap 'rm -f "$INFLIGHT_DIR/$slot_token"' EXIT
+    echo "$BASHPID" > "$INFLIGHT_DIR/$slot_token" 2>/dev/null || true
 
     # Claim: move pra .processing/ DENTRO do lock — assim duas mensagens
     # pro mesmo dest enfileiram corretamente, e crash entre dispatch e
