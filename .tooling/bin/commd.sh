@@ -148,6 +148,66 @@ error_id() {
   printf '%s-%s-%s-%d' "$(date -u +%Y%m%dT%H%M%SZ)" "$dest" "$kind" "$RANDOM"
 }
 
+# Move uma mensagem entre subdirs de lifecycle com ESTADO HONESTO (H2).
+# Em falha de mv (disco cheio, dir removido, permissão), NÃO mente: emite
+# commd-move-failed (sev=error) e retorna 1. O arquivo permanece em
+# .processing/ — reconcile_processing_once o recupera no próximo poll, e
+# o caller NÃO deve emitir commd-done/commd-dead pra essa transição.
+# Uso: move_msg <src> <dest_dir> <dest> <basename> <target_label>
+move_msg() {
+  local src="$1" dest_dir="$2" dest="$3" basename="$4" target_label="$5"
+  if mv "$src" "$dest_dir/$basename" 2>/dev/null; then
+    return 0
+  fi
+  journal commd-move-failed "$dest" "$basename" \
+    "sev=error" "kind=move-failed" "target=$target_label"
+  log "MOVE FAILED dest=$dest file=$basename target=$target_label (fica em .processing/)"
+  return 1
+}
+
+# Finaliza o dispatch após o worker retornar: move a mensagem pro subdir
+# de lifecycle correto conforme o rc e journaliza. Extraído de dispatch()
+# (H2) pra ser testável isoladamente. Estado honesto: commd-done/-dead só
+# saem se a transição real (mv) teve sucesso; senão, commd-move-failed. Os
+# eventos de verdade sobre o worker (commd-worker-timeout/-exit) saem
+# sempre — independem de onde o arquivo foi parar.
+# Uso: finalize_dispatch <rc> <working_file> <dest> <basename>
+finalize_dispatch() {
+  local rc="$1" working_file="$2" dest="$3" basename="$4"
+  local thread err_id err_kind
+  if [ "$rc" -eq 0 ]; then
+    if move_msg "$working_file" "$INBOX_BASE/$dest/.done" "$dest" "$basename" "done"; then
+      journal commd-done "$dest" "$basename"
+      journal commd-worker-done "$dest" "$basename"
+    fi
+  elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+    # Captura thread/epic ANTES de mover o arquivo pra .dead/ (caminho muda).
+    thread=$(extract_thread "$working_file")
+    err_id=$(error_id "$dest" "worker-timeout")
+    move_msg "$working_file" "$INBOX_BASE/$dest/.dead" "$dest" "$basename" "dead" \
+      && journal commd-dead "$dest" "$basename"
+    journal commd-worker-timeout "$dest" "$basename" \
+      "sev=error" "kind=worker-timeout" "epic=$thread" "id=$err_id" \
+      "timeout_seconds=$MMB_WORKER_TIMEOUT"
+    log "worker TIMEOUT (rc=$rc) dest=$dest file=$basename"
+  else
+    # Distingue watchdog-kill (SIGTERM via pkill, rc=143) de outros exits.
+    thread=$(extract_thread "$working_file")
+    if [ "$rc" -eq 143 ]; then
+      err_kind="worker-watchdog-kill"
+    else
+      err_kind="worker-exit"
+    fi
+    err_id=$(error_id "$dest" "$err_kind")
+    move_msg "$working_file" "$INBOX_BASE/$dest/.dead" "$dest" "$basename" "dead" \
+      && journal commd-dead "$dest" "$basename"
+    journal commd-worker-exit "$dest" "$basename" \
+      "sev=error" "kind=$err_kind" "epic=$thread" "id=$err_id" \
+      "exit_code=$rc"
+    log "worker exit-code=$rc kind=$err_kind dest=$dest file=$basename"
+  fi
+}
+
 cmd_status() {
   if [ ! -f "$PID_FILE" ]; then
     echo "commd: STOPPED (no pid file)"
@@ -244,36 +304,8 @@ dispatch() {
     rc=0
     "$TOOLING_DIR/bin/worker.sh" "$dest" "$working_file" || rc=$?
 
-    if [ "$rc" -eq 0 ]; then
-      mv "$working_file" "$INBOX_BASE/$dest/.done/$basename" 2>/dev/null || true
-      journal commd-done "$dest" "$basename"
-      journal commd-worker-done "$dest" "$basename"
-    elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
-      # Captura thread/epic ANTES de mover o arquivo pra .dead/ (caminho muda).
-      thread=$(extract_thread "$working_file")
-      err_id=$(error_id "$dest" "worker-timeout")
-      mv "$working_file" "$INBOX_BASE/$dest/.dead/$basename" 2>/dev/null || true
-      journal commd-dead "$dest" "$basename"
-      journal commd-worker-timeout "$dest" "$basename" \
-        "sev=error" "kind=worker-timeout" "epic=$thread" "id=$err_id" \
-        "timeout_seconds=$MMB_WORKER_TIMEOUT"
-      log "worker TIMEOUT (rc=$rc) dest=$dest file=$basename"
-    else
-      # Distingue watchdog-kill (SIGTERM via pkill, rc=143) de outros exits.
-      thread=$(extract_thread "$working_file")
-      if [ "$rc" -eq 143 ]; then
-        err_kind="worker-watchdog-kill"
-      else
-        err_kind="worker-exit"
-      fi
-      err_id=$(error_id "$dest" "$err_kind")
-      mv "$working_file" "$INBOX_BASE/$dest/.dead/$basename" 2>/dev/null || true
-      journal commd-dead "$dest" "$basename"
-      journal commd-worker-exit "$dest" "$basename" \
-        "sev=error" "kind=$err_kind" "epic=$thread" "id=$err_id" \
-        "exit_code=$rc"
-      log "worker exit-code=$rc kind=$err_kind dest=$dest file=$basename"
-    fi
+    # Move pro subdir de lifecycle + journaliza (estado honesto, H2).
+    finalize_dispatch "$rc" "$working_file" "$dest" "$basename"
   ) 9>>"$lock" &
 }
 
@@ -293,6 +325,49 @@ reconcile_once() {
       journal commd-poll-recovered "$d" "$basename"
       dispatch "$f"
     done < <(find "$INBOX_BASE/$d" -maxdepth 1 -type f -print0 2>/dev/null)
+  done
+}
+
+# Sweep de órfãos frios em .processing/ (H2). Recupera mensagens presas
+# em .processing/ que nenhum worker está processando — casos: (a) commd
+# morreu entre o claim (mv→.processing) e o fim do worker; (b) um move
+# pra .done/.dead falhou (move_msg deixou o arquivo em .processing/).
+# Diferente do drain de startup, roda no poll periódico (não exige
+# restart pra recuperar).
+#
+# Salvaguardas pra NUNCA tocar trabalho em-voo:
+#   1. Pula o dest inteiro se o heartbeat estiver fresco (worker vivo) —
+#      mesmo sinal que o watchdog usa.
+#   2. Só considera arquivos mais velhos que MMB_WORKER_TIMEOUT + grace.
+#      Acima desse teto, nenhum worker legítimo ainda estaria rodando (o
+#      timeout duro do claude + kill-after já teriam disparado). Isso
+#      separa o timescale do sweep (>~1320s) do watchdog (90s): eles não
+#      competem pelo mesmo arquivo.
+# Re-despacha via dispatch(); a claim idempotente (arquivo já em
+# .processing/) garante que dispatch não re-move nem duplica.
+: "${MMB_PROCESSING_SWEEP_GRACE:=120}"
+reconcile_processing_once() {
+  local d f basename now age f_mod hb hb_mod hb_age min_age
+  now=$(date +%s)
+  min_age=$((MMB_WORKER_TIMEOUT + MMB_PROCESSING_SWEEP_GRACE))
+  for d in $(mmb_dests_list); do
+    # Worker vivo pro dest? heartbeat fresco → não mexe em .processing/.
+    hb="$STATE_DIR/heartbeat-${d}.txt"
+    if [ -f "$hb" ]; then
+      hb_mod=$(stat -c %Y "$hb" 2>/dev/null || echo 0)
+      hb_age=$((now - hb_mod))
+      [ "$hb_age" -lt "$MMB_WATCHDOG_STALE_SECONDS" ] && continue
+    fi
+    while IFS= read -r -d '' f; do
+      basename=$(basename "$f")
+      case "$basename" in .*) continue ;; esac
+      f_mod=$(stat -c %Y "$f" 2>/dev/null || echo "$now")
+      age=$((now - f_mod))
+      [ "$age" -lt "$min_age" ] && continue   # jovem demais — pode ter worker vivo
+      log "sweep: órfão frio em .processing/ dest=$d file=$basename (idade=${age}s)"
+      journal commd-processing-recovered "$d" "$basename" "age_seconds=$age"
+      dispatch "$f"
+    done < <(find "$INBOX_BASE/$d/.processing" -maxdepth 1 -type f -print0 2>/dev/null)
   done
 }
 
@@ -472,6 +547,7 @@ run_foreground() {
       # Timeout do read -t → safety net.
       reconcile_once
       watchdog_check
+      reconcile_processing_once
     else
       # EOF: pipe do inotifywait fechou (processo morreu / SIGPIPE).
       log "inotifywait pipe fechou (rc=$rc); reconciliação final e saída"
