@@ -59,6 +59,9 @@ mmb_targets_load || {
   exit 2
 }
 
+# Indireção testável do agents.sh (precedente: MMB_MSG_SH). Default = real.
+AGENTS_SH="${MMB_AGENTS_SH:-$TOOLING_DIR/bin/agents.sh}"
+
 # Valida que $REPO é target registrado. REPO_SHORT (= id) e REPO_PATH
 # saem do registry — fonte única em vez de derivação por strip de prefixo.
 REPO_SHORT="${REPO#mmb-}"
@@ -72,6 +75,44 @@ REPO_PATH=$(mmb_target_path "$REPO_SHORT")
 if [ ! -d "$REPO_PATH/.git" ]; then
   echo "ERRO: '$REPO' está no registry mas $REPO_PATH/.git não existe." >&2
   exit 2
+fi
+
+# ── Idempotência (H3b) ────────────────────────────────────────────
+# Sob retry/reprocessamento (ex.: orq re-despachado pelo retry-budget do
+# H3), spawn-atomic pode ser chamado de novo pra MESMA task. Spawnar um
+# 2º atômico VIVO na mesma worktree/branch é perigoso: dois claudes
+# competindo, dois open-pr. A identidade estável é o AGENT_ID
+# (<repo-short>-<task-id>), 1:1 com (branch task/<id>-*, worktree, registro).
+#
+# Política:
+#   - vivo e consistente (registry=spawn + pane existe) → reusa, sai 0.
+#   - registry diz vivo mas o pane sumiu (zumbi) → inconsistente → falha alto.
+#   - sem atômico vivo (não-registrado / deregistered) → segue spawn normal.
+# Roda só no contexto que de fato spawna (tmux disponível); o fallback
+# sem-tmux não cria atômico vivo, então não precisa da guarda.
+AGENT_ID="${REPO_SHORT}-${TASK_ID}"
+PARENT_AGENT="$REPO_SHORT"
+
+if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; then
+  if _atomic_status=$("$AGENTS_SH" status "$AGENT_ID" 2>/dev/null); then
+    _atomic_ev=$(printf '%s\n' "$_atomic_status" | head -1 \
+      | grep -oE '"ev":"[^"]*"' | head -1 | sed -E 's/.*:"([^"]*)"/\1/')
+    if [ "$_atomic_ev" = "spawn" ]; then
+      _atomic_pane=$(printf '%s\n' "$_atomic_status" | head -1 \
+        | grep -oE '"pane":"[^"]*"' | head -1 | sed -E 's/.*:"([^"]*)"/\1/')
+      if [ -n "$_atomic_pane" ] && tmux list-panes -t "$_atomic_pane" >/dev/null 2>&1; then
+        echo "↺ Atômico já vivo pra $AGENT_ID (pane $_atomic_pane)."
+        echo "  Idempotente — reusando, sem spawnar de novo. Issue: #$ISSUE"
+        exit 0
+      fi
+      echo "ERRO: registry marca '$AGENT_ID' como VIVO, mas o pane '${_atomic_pane:-?}' não existe (zumbi)." >&2
+      echo "      Estado inconsistente — não vou spawnar em cima nem fingir sucesso." >&2
+      echo "      Remedie e re-tente:" >&2
+      echo "        $AGENTS_SH deregister $AGENT_ID stale-respawn" >&2
+      echo "        .tooling/bin/task-abort.sh $REPO $TASK_ID   # se a worktree também estiver suja" >&2
+      exit 5
+    fi
+  fi
 fi
 
 # Validação: issue existe e tem as labels esperadas.
@@ -136,10 +177,8 @@ asdf reshim nodejs 2>/dev/null || true
 
 ATOMIC_FLAGS=$(mmb_claude_flags atomic)
 
-# Agent ID do atômico: <repo-short>-<task-id> (ex: cockpit-X1).
-# REPO_SHORT já foi validado contra o registry no topo.
-AGENT_ID="${REPO_SHORT}-${TASK_ID}"
-PARENT_AGENT="$REPO_SHORT"
+# AGENT_ID (<repo-short>-<task-id>) e PARENT_AGENT já computados na guarda
+# de idempotência (H3b), logo após a validação do REPO.
 
 PROMPT="Você é um Agente Atômico (id: $AGENT_ID). Leia /MMB/.tooling/profiles/atomic-agent.md antes de qualquer coisa. Sua tarefa: $TASK_ID (slug: $SLUG, repo: $REPO). Sua sub-issue é #$ISSUE em $GH_FULL — leia via: gh issue view $ISSUE --repo $GH_FULL. O body da issue é o prompt completo da sua execução. Antes de cada commit, rode: /MMB/.tooling/bin/agents.sh heartbeat $AGENT_ID. Quando terminar, abra PR via /MMB/.tooling/bin/open-pr.sh e encerre (o pane fecha sozinho)."
 
