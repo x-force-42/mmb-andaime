@@ -28,6 +28,8 @@ MMB_ROOT="$(dirname "$TOOLING_DIR")"
 source "$TOOLING_DIR/config.sh"
 # shellcheck disable=SC1091
 source "$TOOLING_DIR/lib/targets.sh"
+# shellcheck disable=SC1091
+source "$TOOLING_DIR/bin/lib/heartbeat.sh"  # H4: liveness por PID (funções puras)
 
 # Eager load: surface registry inválido antes de qualquer dispatch.
 mmb_targets_load || {
@@ -100,29 +102,45 @@ LOG="$LOG_DIR/${DEST}.log"
 # já concluído. Janela de 120s cobre essa latência sem mascarar
 # travamento real (watchdog ainda dispara aos 90s sobre o heartbeat).
 #
-# DÉBITO/HARDENING FUTURO (2c, não implementado): detectar
-# claude vivo via `kill -0 $CLAUDE_PID` em vez de log mtime —
-# distingue "vivo silencioso" de "travado de verdade". Requer
-# expor PID do claude -p de dentro do subshell + timeout que
-# envelopa a invocação (linha ~204). Não trivial, valor médio.
+# H4 (2c — IMPLEMENTADO): liveness por PID real da invocação, não só
+# mtime do log. O subshell que dispara o `claude -p` (abaixo) grava o PID
+# em state/heartbeat-<dest>.pid; heartbeat_tick consulta a lib pura
+# mmb_heartbeat_alive (bin/lib/heartbeat.sh), que usa `kill -0` no PID
+# como sinal PRIMÁRIO — claude vivo porém silencioso mantém o heartbeat
+# fresco e o watchdog do commd não o mata. O mtime do log permanece como
+# FALLBACK pra quando o PID não está disponível (race de startup etc.).
+# Trade-off consciente: um worker travado-mas-vivo deixa de ser morto aos
+# ~90s pelo watchdog; passa a ser limitado pelo timeout duro de
+# MMB_WORKER_TIMEOUT (600s). É correto — "silencioso" != "travado", e o
+# único sinal sólido de "travado vivo" seria progresso reportado, que é
+# justamente a fonte do falso-positivo que o H4 elimina.
 : "${MMB_HEARTBEAT_LOG_WINDOW:=120}"
 HEARTBEAT_FILE="$TOOLING_DIR/state/heartbeat-${DEST}.txt"
 mkdir -p "$TOOLING_DIR/state"
 : > "$HEARTBEAT_FILE"
 
+# PID da invocação Claude (H4). Escrito pelo subshell que dispara o
+# `claude -p`. Pode ser o PID do `timeout` que envelopa o claude — vide
+# nota em bin/lib/heartbeat.sh; aceitável porque o timeout vive enquanto
+# o claude vive. O rm -f de partida neutraliza um .pid remanescente de
+# uma invocação anterior morta a kill (cujo heartbeat_tick também já
+# morreu), pra que o nosso heartbeat_tick nunca leia um PID stale.
+CLAUDE_PID_FILE="$TOOLING_DIR/state/heartbeat-${DEST}.pid"
+rm -f "$CLAUDE_PID_FILE"
+
 heartbeat_tick() {
   while sleep 15; do
-    # Parent worker.sh já saiu? Encerre.
-    kill -0 $$ 2>/dev/null || exit 0
-    # Log produzindo output dentro da janela? Refresh heartbeat.
-    if [ -f "$LOG" ]; then
-      local now log_mod
-      now=$(date +%s)
-      log_mod=$(stat -c %Y "$LOG" 2>/dev/null || echo 0)
-      if [ "$((now - log_mod))" -lt "$MMB_HEARTBEAT_LOG_WINDOW" ]; then
-        touch "$HEARTBEAT_FILE"
-      fi
+    # Parent worker.sh já saiu (ex.: morto pelo watchdog via SIGTERM)?
+    # Limpe os arquivos de estado e encerre. Belt-and-suspenders pro caso
+    # de kill: sob `pkill -f worker.sh` o próprio heartbeat_tick costuma
+    # morrer junto (mesmo argv), mas se sobreviver ele faz o cleanup que
+    # o trap EXIT do pai não rodou.
+    if ! kill -0 $$ 2>/dev/null; then
+      rm -f "$HEARTBEAT_FILE" "$CLAUDE_PID_FILE"
+      exit 0
     fi
+    # H4: liveness por PID (primário) com fallback pro mtime do log.
+    mmb_heartbeat_tick_once "$CLAUDE_PID_FILE" "$LOG" "$MMB_HEARTBEAT_LOG_WINDOW" "$HEARTBEAT_FILE"
   done
 }
 
@@ -131,7 +149,7 @@ HEARTBEAT_PID=$!
 
 cleanup_heartbeat() {
   kill "$HEARTBEAT_PID" 2>/dev/null || true
-  rm -f "$HEARTBEAT_FILE"
+  rm -f "$HEARTBEAT_FILE" "$CLAUDE_PID_FILE"
 }
 
 # ─── Agent registry pro worker stateless (logger-model-tracking) ──
@@ -234,13 +252,23 @@ EOF
   # MMB_TAB pra que msg.sh (se chamado de dentro) saiba o remetente
   export MMB_TAB="$DEST"
   export MMB_AGENT_ID="$DEST-$$"
+  # H4: dispara em background pra capturar o PID da invocação e gravá-lo
+  # pro heartbeat_tick consultar via `kill -0`. $! é o PID do `timeout`
+  # (envelope) — vive enquanto o claude vive, então responde fielmente
+  # "invocação em andamento?" (ver bin/lib/heartbeat.sh). O `wait` no fim
+  # preserva o exit code (124/137 de timeout, ou o rc do claude) — exit
+  # code do subshell idêntico ao comportamento pré-H4.
   # shellcheck disable=SC2086
   timeout --signal=TERM --kill-after=30s "${MMB_WORKER_TIMEOUT}s" \
     claude -p "$USER_PROMPT" \
       $CLAUDE_FLAGS \
       --append-system-prompt "$APPEND_PROMPT" \
       --output-format text \
-      2>&1
+      2>&1 &
+  _claude_pid=$!
+  # Falha de escrita do .pid degrada pro fallback (mtime), não mata o worker.
+  echo "$_claude_pid" > "$CLAUDE_PID_FILE" 2>/dev/null || true
+  wait "$_claude_pid"
 ) >> "$LOG" || {
   EXIT=$?
   if [ "$EXIT" = "124" ] || [ "$EXIT" = "137" ]; then
