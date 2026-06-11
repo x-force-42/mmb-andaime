@@ -217,6 +217,17 @@
 
   <h2>Entries</h2>
   <ul>
+    <li><a href="#v0-16-0">v0.16.0 — Portão de Autonomia Supervisionada</a>
+      <ul>
+        <li><a href="#v0-16-0-saldo" class="sub">Saldo</a></li>
+        <li><a href="#v0-16-0-stack" class="sub">A stack P0 integrada</a></li>
+        <li><a href="#v0-16-0-garantias" class="sub">Garantias novas</a></li>
+        <li><a href="#v0-16-0-significado" class="sub">Significado: o portão</a></li>
+        <li><a href="#v0-16-0-limites" class="sub">Limites conhecidos</a></li>
+        <li><a href="#v0-16-0-proximos" class="sub">Próximos passos</a></li>
+      </ul>
+    </li>
+
     <li><a href="#v0-15-0">v0.15.0 — External target fortification Wave 1</a>
       <ul>
         <li><a href="#v0-15-0-saldo" class="sub">Saldo</a></li>
@@ -344,6 +355,173 @@
       + débitos abertos com gatilhos explícitos.</li>
     <li><strong>Não:</strong> diário de conversa, atualização contínua
       por commit, registro de cada bug. Para isso, há outras peças.</li>
+  </ul>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+
+<section class="entry" id="v0-16-0">
+  <h2>v0.16.0 — Portão de Autonomia Supervisionada</h2>
+  <div class="meta">
+    <span class="tag">v0.16.0</span> 2026-06-11 ·
+    pós-tag <code>v0.15.0</code> · sessão 2026-06-11
+  </div>
+
+  <p>
+    Marco de substrato, não de feature. Integra na <code>main</code>, por
+    <strong>fast-forward linear</strong>, o pacote completo de endurecimento
+    <strong>P0</strong> — seis commits que fecham os caminhos onde o andaime
+    perdia ou duplicava trabalho <em>em silêncio</em> sob falha. Era a
+    pré-condição declarada para o "Caminho B": antes de fechar qualquer loop
+    MAPE-K com LLM, o substrato precisa parar de perder efeito colateral em
+    silêncio, porque <strong>autonomia amplifica o substrato</strong>. Com
+    este marco o MMB fica apto a iniciar <em>spikes de loops autonômicos
+    supervisionados</em> — com o humano no gate. Daí o nome: o portão está
+    aberto para começar; o Rick continua sendo o portão.
+  </p>
+
+  <h3 id="v0-16-0-saldo">Saldo</h3>
+  <table>
+    <thead><tr><th>Item</th><th>Resultado</th></tr></thead>
+    <tbody>
+      <tr><td>Marco</td><td>Pacote P0 hardening integrado na <code>main</code></td></tr>
+      <tr><td>HEAD da <code>main</code></td><td><code>cc43000</code> (= ponta H4)</td></tr>
+      <tr><td>Integração</td><td>fast-forward puro (<code>b9e22b7..cc43000</code>), 0 commit de merge</td></tr>
+      <tr><td>Commits incorporados</td><td>6 (H1, H2, H3, H3b, H5, H4)</td></tr>
+      <tr><td>Diff agregado</td><td>1748 inserções, 62 deleções, 13 arquivos</td></tr>
+      <tr><td>Suítes de teste novas na stack</td><td>7 (chaos, retry, backpressure, create-task-issue idem., open-pr idem., spawn-atomic idem., heartbeat)</td></tr>
+      <tr><td>Lib nova</td><td><code>.tooling/bin/lib/heartbeat.sh</code></td></tr>
+      <tr><td>Suíte completa na <code>main</code></td><td>20/20 verde</td></tr>
+      <tr><td>Caminho B</td><td>inalterado — detector <code>3×→codifique</code> segue read-only, fora da <code>main</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="v0-16-0-stack">A stack P0 integrada</h3>
+  <p>Seis commits, em linha reta sobre a <code>main</code> anterior:</p>
+  <table>
+    <thead><tr><th>Commit</th><th>Item</th><th>O quê</th></tr></thead>
+    <tbody>
+      <tr><td><code>97792cf</code></td><td>H1</td><td>idempotência de criação de issue/PR</td></tr>
+      <tr><td><code>a2fc0cb</code></td><td>H2</td><td>estado honesto + sweep de <code>.processing/</code></td></tr>
+      <tr><td><code>9345844</code></td><td>H3</td><td>retry-budget / dead-letter</td></tr>
+      <tr><td><code>b072dd3</code></td><td>H3b</td><td><code>spawn-atomic.sh</code> idempotente</td></tr>
+      <tr><td><code>c91c77c</code></td><td>H5</td><td>backpressure / teto global de concorrência</td></tr>
+      <tr><td><code>cc43000</code></td><td>H4</td><td>heartbeat por PID</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="v0-16-0-garantias">Garantias novas</h3>
+  <ul>
+    <li>
+      <strong>Reprocessamento seguro (idempotência).</strong> Criação de
+      issue e PR (H1, via âncora <code>mmb-cycle-key</code> + <code>gh pr list
+      --head</code>) e spawn de atômico (H3b, via guarda por <code>AGENT_ID</code>)
+      passam a reusar o efeito existente em vez de duplicar. Um redrain
+      pós-shutdown não cria mais issue, PR nem atômico em dobro — fecha
+      exatamente o débito <code>redrain-idempotency-gap</code> aberto na
+      v0.15.0 (incidente #42).
+    </li>
+    <li>
+      <strong>Estado honesto.</strong> O <code>commd</code> só declara
+      <code>commd-done</code>/<code>commd-dead</code> se o <code>mv</code> do
+      arquivo de mensagem realmente teve sucesso; em falha emite
+      <code>commd-move-failed</code> e o arquivo permanece em
+      <code>.processing/</code>. Um sweep de órfãos frios re-despacha o que
+      ficou preso (H2).
+    </li>
+    <li>
+      <strong>Retry-budget / dead-letter.</strong> Sidecar
+      <code>&lt;msg&gt;.attempts</code> + <code>MMB_MAX_ATTEMPTS=3</code> com
+      backoff linear. Falha retentável (<code>worker-exit</code>,
+      <code>move-failed</code>) volta à fila; esgotada vai para
+      <code>.dead/</code>. É o <strong>primeiro tijolo de self-healing</strong>
+      do andaime (H3).
+    </li>
+    <li>
+      <strong>Backpressure.</strong> Teto global de concorrência via
+      token-dir <code>state/inflight/</code> (<code>MMB_MAX_CONCURRENT=4</code>);
+      o excesso é <em>deferido sem perder</em> a mensagem (re-elegível no
+      próximo poll), e retry/sweep/drain respeitam o teto automaticamente (H5).
+    </li>
+    <li>
+      <strong>Heartbeat por PID.</strong> Liveness do worker passa a usar
+      <code>kill -0</code> no PID da invocação como sinal primário; um worker
+      vivo porém silencioso deixa de ser morto pelo watchdog. O mtime do log
+      vira fallback. Justificado por dados — o detector <code>3×→codifique</code>
+      redescobriu esse padrão do journal (H4).
+    </li>
+  </ul>
+
+  <h3 id="v0-16-0-significado">Significado: o portão</h3>
+  <p>
+    O diagnóstico de 2026-06-01 colocou o MMB numa bifurcação: o artefato é
+    ferramental para um orquestrador humano (~85% human-in-the-loop), mas a
+    ambição declarada é um sistema auto-gerenciável. O parecer recomendou o
+    <strong>Caminho B</strong> (testbed de autonomic computing dirigido por
+    LLM), com a ressalva de que B pressupõe um mínimo de A: corrigir os P0s de
+    perda silenciosa <em>antes</em>, porque fechar um loop autônomo sobre um
+    substrato que perde trabalho em silêncio multiplicaria o estrago.
+  </p>
+  <p>
+    Esta versão entrega esse mínimo. Os caminhos de perda/duplicação silenciosa
+    estão corrigidos e o H3 instala o primeiro mecanismo de self-healing. O
+    substrato agora sustenta <strong>spikes de loops autonômicos
+    supervisionados</strong> — o humano permanece no gate (aprovar briefing,
+    revisar e mergear PR), mas o sistema abaixo dele já não some com o trabalho
+    quando algo falha. O portão está aberto; quem decide passar continua sendo
+    o Rick.
+  </p>
+
+  <h3 id="v0-16-0-limites">Limites conhecidos</h3>
+  <ul>
+    <li>
+      <strong>Saga GitHub × inbox ainda aberta.</strong> A reconciliação e
+      compensação de divergência entre GitHub (estado em-voo autoritativo) e o
+      <code>inbox/</code> (audit trail) é Tier 3 do plano e não foi
+      implementada; o reconcile do logger ainda não detecta+compensa
+      divergência.
+    </li>
+    <li>
+      <strong>Retry de <code>worker-exit</code> ainda amplo.</strong> O H3
+      re-roda o worker em <code>worker-exit</code> sem distinguir falha
+      transitória de determinística. Tornar os retries mais seletivos segue
+      aberto — risco aceito conscientemente para observar o retry ativo em
+      produção.
+    </li>
+    <li>
+      <strong><code>ontology.md</code> precisa de sync.</strong> Os eventos de
+      journal novos do H2/H3/H5 (<code>commd-move-failed</code>,
+      <code>commd-dead-letter</code>, <code>commd-dispatch-deferred</code>,
+      <code>commd-processing-recovered</code>) ainda não estão nos conjuntos
+      fechados da §4. O H4 não introduziu evento novo.
+    </li>
+    <li>
+      <strong>Detector <code>3×→codifique</code> ainda experimental.</strong>
+      Read-only, vive na branch <code>experiment/3x-codify-detector</code>,
+      fora da <code>main</code>. É kickoff do próximo capítulo, não parte deste
+      marco.
+    </li>
+  </ul>
+
+  <h3 id="v0-16-0-proximos">Próximos passos</h3>
+  <ul>
+    <li>
+      <strong>Evoluir o detector read-only para PR candidato.</strong> Do
+      estágio Monitor→Analyze de um loop MAPE-K para Plan→Execute:
+      <em>rascunhar</em> (não abrir) um PR de guardrail/fix a partir do padrão
+      recorrente #1, sob gate humano.
+    </li>
+    <li>
+      <strong>Retomar o Caminho B.</strong> Spikes de loops autonômicos
+      supervisionados, agora que o substrato P0 está pronto.
+    </li>
+    <li>
+      <strong>Tratar os ruídos/fixes parkeados separadamente.</strong> O
+      tmux-fix do <code>spawn-atomic.sh</code> e o registro de
+      <code>expense-web</code>/<code>expense-api</code> no
+      <code>targets.json</code>, cada um em seu próprio commit, fora deste
+      marco.
+    </li>
   </ul>
 </section>
 
