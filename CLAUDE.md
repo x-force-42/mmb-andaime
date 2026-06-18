@@ -21,6 +21,8 @@ workers stateless + agentes atômicos.
 | `expense-web` | externo | frontend do app de controle de gastos (Vite+React+TS), reconstruído pelo método |
 | `expense-api` | externo | backend do app de controle de gastos (Fastify+TS+Prisma), reconstruído pelo método |
 | `shape` | externo | avatar 3D paramétrico a partir de medidas antropométricas (Vite+React+three.js, localStorage-only); checkout em `/home/eliezer/lab/shape` |
+| `habita-api` | externo | backend do habita (catálogo imobiliário Muzambinho): Fastify+TS+Prisma, deploy ECS Fargate; checkout em `/home/eliezer/lab/habita-api` |
+| `habita-web` | externo | frontend do habita: Next.js 14 App Router + TS + Tailwind + shadcn, deploy Vercel; checkout em `/home/eliezer/lab/habita-web` |
 | `mmb-andaime` (este diretório) | **especial** | o próprio runtime — modificável só pelo Master, com cautela |
 
 Fonte declarativa dos targets vivos: [`.tooling/targets.json`](.tooling/targets.json)

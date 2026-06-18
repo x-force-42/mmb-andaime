@@ -91,6 +91,32 @@
       "requires_github": true,
       "kind": "external",
       "managed_by_reset": false
+    },
+    {
+      "id": "habita-api",
+      "dest": "habita-api",
+      "repo": "habita-api",
+      "local_path": "/home/eliezer/lab/habita-api",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": true,
+      "owner": "x-force-42",
+      "requires_github": true,
+      "kind": "external",
+      "managed_by_reset": true
+    },
+    {
+      "id": "habita-web",
+      "dest": "habita-web",
+      "repo": "habita-web",
+      "local_path": "/home/eliezer/lab/habita-web",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": true,
+      "owner": "x-force-42",
+      "requires_github": true,
+      "kind": "external",
+      "managed_by_reset": true
     }
   ]
 }
