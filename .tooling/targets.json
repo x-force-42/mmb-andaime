@@ -52,6 +52,32 @@
       "requires_github": true,
       "kind": "external",
       "managed_by_reset": false
+    },
+    {
+      "id": "expense-web",
+      "dest": "expense-web",
+      "repo": "expense-web",
+      "local_path": "mmb-expense-web",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": true,
+      "owner": "x-force-42",
+      "requires_github": true,
+      "kind": "external",
+      "managed_by_reset": true
+    },
+    {
+      "id": "expense-api",
+      "dest": "expense-api",
+      "repo": "expense-api",
+      "local_path": "mmb-expense-api",
+      "worker_profile": "project-orchestrator.md",
+      "agent_layer": "project",
+      "tracked_by_logger": true,
+      "owner": "x-force-42",
+      "requires_github": true,
+      "kind": "external",
+      "managed_by_reset": true
     }
   ]
 }
