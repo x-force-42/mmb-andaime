@@ -35,12 +35,24 @@ if [ -z "$REPO" ] || [ -z "$TASK_ID" ]; then
 fi
 
 # Resolve REPO_PATH via registry (suporta local_path absoluto para target
-# externo fora de MMB_ROOT). Fallback retro-compat para repos não-registrados.
-REPO_SHORT="${REPO#mmb-}"
-if mmb_target_exists "$REPO_SHORT" && [ "$(mmb_target_repo "$REPO_SHORT")" = "$REPO" ]; then
+# externo fora de MMB_ROOT). Aceita tanto id do registry (ex.: "logger")
+# quanto nome do repo GitHub (ex.: "mmb-logger") — sintoma do bug B5
+# (18/jun/2026): habita-api funcionou via id porque id==repo, mas logger
+# (id=logger, repo=mmb-logger) caía no fallback inexistente. Fallback retro-
+# compat para repos não-registrados ainda existe (script antigo do mr-meeseeks).
+if mmb_target_exists "$REPO"; then
+  # REPO veio como id (cockpit, logger, habita-api, shape, etc)
+  REPO_SHORT="$REPO"
+  REPO="$(mmb_target_repo "$REPO_SHORT")"
   REPO_PATH=$(mmb_target_path "$REPO_SHORT")
 else
-  REPO_PATH="$MMB_ROOT/$REPO"
+  # REPO veio como nome de repo GitHub — procurar id correspondente
+  REPO_SHORT="${REPO#mmb-}"
+  if mmb_target_exists "$REPO_SHORT" && [ "$(mmb_target_repo "$REPO_SHORT")" = "$REPO" ]; then
+    REPO_PATH=$(mmb_target_path "$REPO_SHORT")
+  else
+    REPO_PATH="$MMB_ROOT/$REPO"
+  fi
 fi
 
 if [ ! -d "$REPO_PATH/.git" ]; then
