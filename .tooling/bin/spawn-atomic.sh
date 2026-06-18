@@ -204,13 +204,16 @@ if [ -n "${TMUX:-}" ] && tmux has-session -t "$MMB_TMUX_SESSION" 2>/dev/null; th
   if [ -z "$WINDOW_ID" ]; then
     echo "AVISO: window '$short' não encontrada na sessão tmux '$MMB_TMUX_SESSION'."
     echo "Fallback: criando nova window."
-    tmux new-window -t "$MMB_TMUX_SESSION" -n "atomic-$TASK_ID" -c "$WORKTREE"
-    FALLBACK_PANE=$(tmux list-panes -t "$MMB_TMUX_SESSION:atomic-$TASK_ID" \
-      -F '#{pane_id}' | head -1)
-    _send_atomic_init "$MMB_TMUX_SESSION:atomic-$TASK_ID" "${FALLBACK_PANE:-}"
+    # Captura o pane_id direto do new-window (-P -F). Evita o bug de tmux
+    # parseando "." em nomes de window como separador de pane (TASK_ID
+    # tipo "1.1" virava target "atomic-1.1" → window "atomic-1" pane "1").
+    # Visto em 2026-05-25 (expense-web/api S0).
+    NEW_PANE=$(tmux new-window -t "$MMB_TMUX_SESSION" -n "atomic-$TASK_ID" \
+      -c "$WORKTREE" -P -F '#{pane_id}')
+    _send_atomic_init "$NEW_PANE" "$NEW_PANE"
     "$TOOLING_DIR/bin/agents.sh" register \
-      "$AGENT_ID" "$PARENT_AGENT" "$MMB_TMUX_SESSION:atomic-$TASK_ID" "$TASK_ID" "$EPIC_SLUG" "$MMB_MODEL_ATOMIC"
-    echo "✓ Atômico spawnado em nova window 'atomic-$TASK_ID' (id: $AGENT_ID)"
+      "$AGENT_ID" "$PARENT_AGENT" "$NEW_PANE" "$TASK_ID" "$EPIC_SLUG" "$MMB_MODEL_ATOMIC"
+    echo "✓ Atômico spawnado em nova window 'atomic-$TASK_ID' (pane $NEW_PANE, id: $AGENT_ID)"
     exit 0
   fi
 
