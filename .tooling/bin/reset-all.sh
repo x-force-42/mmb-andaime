@@ -36,17 +36,19 @@ mmb_targets_load || {
   exit 2
 }
 
-# Lista de repos full (mmb-<id>) e ids gerenciáveis pelo reset, montada
-# do registry. PR 2C: filtra por managed_by_reset=true. Targets com a
-# flag false (ex.: external com worktree em /tmp ou repo de terceiros)
-# ficam fora de fases destrutivas — protege contra reset acidental
-# em projeto externo.
-REPOS=()
+# Lista de ids gerenciáveis pelo reset, montada do registry. PR 2C: filtra
+# por managed_by_reset=true. Targets com a flag false (ex.: external com
+# worktree em /tmp ou repo de terceiros) ficam fora de fases destrutivas —
+# protege contra reset acidental em projeto externo.
+#
+# Iteração é por id (RESET_IDS); cada fase resolve repo/local_path do
+# registry via mmb_target_repo / mmb_target_path. Não assumir repo ==
+# diretório local: targets externos têm local_path diferente (e podem
+# ser absolutos, fora de MMB_ROOT).
 RESET_IDS=()
 SKIPPED_REPOS=()
 for _id in $(mmb_targets_list); do
   if [ "$(mmb_target_managed_by_reset "$_id")" = "true" ]; then
-    REPOS+=("$(mmb_target_repo "$_id")")
     RESET_IDS+=("$_id")
   else
     SKIPPED_REPOS+=("$(mmb_target_repo "$_id") (id=$_id, managed_by_reset=false)")
@@ -62,7 +64,7 @@ fi
 
 # Helper PR 2B: dado um repo do registry, retorna "<owner>/<repo>"
 # usando owner per-target. Fallback para GH_OWNER global se repo
-# desconhecido (defensivo — REPOS vem do registry, deveria sempre achar).
+# desconhecido (defensivo — id vem do registry, deveria sempre achar).
 _resolve_gh_full() {
   local target_repo="$1"
   local _id
@@ -155,7 +157,7 @@ phase_kill_claudes() {
       tmux send-keys -t "$pane" "/exit" Enter
     fi
   done
-  [ "$DRY_RUN" -eq 0 ] && sleep 4
+  if [ "$DRY_RUN" -eq 0 ]; then sleep 4; fi
 }
 
 # ── Fase 1 — inventário ─────────────────────────────────────────────────
@@ -170,7 +172,10 @@ phase_inventory() {
   {
     echo "# Pre-reset inventory — $TS"
     echo
-    for repo in "${REPOS[@]}"; do
+    for _id in "${RESET_IDS[@]}"; do
+      local repo r
+      repo=$(mmb_target_repo "$_id")
+      r=$(mmb_target_path "$_id")
       echo "## $repo"
       echo
       echo "### PRs abertos"; echo '```'
@@ -180,13 +185,13 @@ phase_inventory() {
       gh issue list --repo "$(_resolve_gh_full "$repo")" --state open --json number,title 2>&1 || true
       echo '```'; echo
       echo "### Worktrees"; echo '```'
-      git -C "$MMB_ROOT/$repo" worktree list 2>&1 || true
+      git -C "$r" worktree list 2>&1 || true
       echo '```'; echo
       echo "### Branches locais"; echo '```'
-      git -C "$MMB_ROOT/$repo" branch -vv 2>&1 || true
+      git -C "$r" branch -vv 2>&1 || true
       echo '```'; echo
       echo "### Branches remotas task/*"; echo '```'
-      git -C "$MMB_ROOT/$repo" branch -r 2>&1 | grep -E 'task/' || echo "(nenhuma)"
+      git -C "$r" branch -r 2>&1 | grep -E 'task/' || echo "(nenhuma)"
       echo '```'; echo
     done
   } > "$inv"
@@ -198,8 +203,9 @@ phase_github_close() {
   say "Fase 2: fechar PRs e issues abertos"
   local cmt="cleanup/reset do andaime — $TS"
   local pids=()
-  for repo in "${REPOS[@]}"; do
-    local full
+  for _id in "${RESET_IDS[@]}"; do
+    local repo full
+    repo=$(mmb_target_repo "$_id")
     full=$(_resolve_gh_full "$repo")
     local prs issues
     prs=$(gh pr list --repo "$full" --state open --json number -q '.[].number' 2>/dev/null || echo "")
@@ -227,8 +233,10 @@ phase_github_close() {
 # ── Fase 3 — worktrees + branches ───────────────────────────────────────
 phase_worktrees_branches() {
   say "Fase 3: worktrees e branches task/*"
-  for repo in "${REPOS[@]}"; do
-    local r="$MMB_ROOT/$repo"
+  for _id in "${RESET_IDS[@]}"; do
+    local repo r
+    repo=$(mmb_target_repo "$_id")
+    r=$(mmb_target_path "$_id")
     echo "  >> $repo"
     # Remove worktrees não-principais
     local wts
@@ -258,8 +266,10 @@ phase_worktrees_branches() {
 # ── Fase 4 — reset main ─────────────────────────────────────────────────
 phase_reset_main() {
   say "Fase 4: reset --hard origin/main + cleanup órfãos"
-  for repo in "${REPOS[@]}"; do
-    local r="$MMB_ROOT/$repo"
+  for _id in "${RESET_IDS[@]}"; do
+    local repo r
+    repo=$(mmb_target_repo "$_id")
+    r=$(mmb_target_path "$_id")
     echo "  >> $repo"
     run "git -C '$r' checkout main"
     run "git -C '$r' fetch origin"
@@ -345,8 +355,10 @@ phase_messaging() {
 phase_verify() {
   say "Fase 6: verificação"
   local ok=1
-  for repo in "${REPOS[@]}"; do
-    local r="$MMB_ROOT/$repo"
+  for _id in "${RESET_IDS[@]}"; do
+    local repo r
+    repo=$(mmb_target_repo "$_id")
+    r=$(mmb_target_path "$_id")
     local extra
     extra=$(git -C "$r" branch --format '%(refname:short)' | grep -v '^main$' || true)
     local wts
@@ -360,8 +372,9 @@ phase_verify() {
       echo "  ✓ $repo limpo"
     fi
   done
-  for repo in "${REPOS[@]}"; do
-    local prs issues
+  for _id in "${RESET_IDS[@]}"; do
+    local repo prs issues
+    repo=$(mmb_target_repo "$_id")
     prs=$(gh pr list --repo "$(_resolve_gh_full "$repo")" --state open --json number -q 'length' 2>/dev/null || echo "?")
     issues=$(gh issue list --repo "$(_resolve_gh_full "$repo")" --state open --json number -q 'length' 2>/dev/null || echo "?")
     if [ "$prs" != "0" ] || [ "$issues" != "0" ]; then
