@@ -20,6 +20,7 @@ workers stateless + agentes atômicos.
 | `campo-premiado` | externo | primeiro target externo real (v0.14.0); checkout fora de `$MMB_ROOT` |
 | `expense-web` | externo | frontend do app de controle de gastos (Vite+React+TS), reconstruído pelo método |
 | `expense-api` | externo | backend do app de controle de gastos (Fastify+TS+Prisma), reconstruído pelo método |
+| `shape` | externo | avatar 3D paramétrico a partir de medidas antropométricas (Vite+React+three.js, localStorage-only); checkout em `/home/eliezer/lab/shape` |
 | `mmb-andaime` (este diretório) | **especial** | o próprio runtime — modificável só pelo Master, com cautela |
 
 Fonte declarativa dos targets vivos: [`.tooling/targets.json`](.tooling/targets.json)
