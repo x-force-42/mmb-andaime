@@ -17,6 +17,9 @@ workers stateless + agentes atômicos.
 | `mmb-cockpit` | interno | governança retrospectiva (SPA React) |
 | `mmb-aquarium` | interno | visualização em tempo real (PixiJS + áudio) |
 | `mmb-logger` | interno | memória operacional (SQLite + API REST) |
+| `campo-premiado` | externo | primeiro target externo real (v0.14.0); checkout fora de `$MMB_ROOT` |
+| `expense-web` | externo | frontend do app de controle de gastos (Vite+React+TS), reconstruído pelo método |
+| `expense-api` | externo | backend do app de controle de gastos (Fastify+TS+Prisma), reconstruído pelo método |
 | `mmb-andaime` (este diretório) | **especial** | o próprio runtime — modificável só pelo Master, com cautela |
 
 Fonte declarativa dos targets vivos: [`.tooling/targets.json`](.tooling/targets.json)
