@@ -448,10 +448,14 @@ dispatch() {
   # Backpressure (H5): reserva um slot ANTES do claim. Se cheio ou o dest
   # já está em-voo, ADIA — a mensagem fica onde está (inbox top-level →
   # reconcile_once; .processing c/ sidecar → reconcile_retries_once) e o
-  # próximo poll re-tenta. Não perde. Declarar local ANTES de atribuir:
-  # `local x=$(...)` mascara o exit code de $(...).
-  local slot_token rc_reserve
-  slot_token=$(reserve_slot "$dest"); rc_reserve=$?
+  # próximo poll re-tenta. Não perde.
+  #
+  # set -e gotcha simétrico ao comentário antigo: `local x=$(cmd_fail)`
+  # mascara o rc; `local x; x=$(cmd_fail)` EXPÕE o rc e set -e dispara.
+  # reserve_slot intencionalmente faz `exit 2` (defer) e `exit 1` (lotado),
+  # então a atribuição precisa absorver via `|| rc=$?` pra não matar o commd.
+  local slot_token rc_reserve=0
+  slot_token=$(reserve_slot "$dest") || rc_reserve=$?
   if [ "$rc_reserve" -ne 0 ]; then
     if [ "$rc_reserve" -eq 2 ]; then
       log "deferred (dest em-voo): dest=$dest file=$basename"
