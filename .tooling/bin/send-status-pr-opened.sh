@@ -122,7 +122,11 @@ else
   # Auto-detect: lê body do PR via gh CLI, grep "## Suíte verde".
   # Se gh falhar (rede, auth, etc), declara "ausente" honestamente —
   # nunca presume "verde".
-  REPO_FULL="mmb-${REPO_SHORT}"
+  #
+  # REPO_FULL vem do registry — externos não têm prefixo "mmb-" (campo-premiado,
+  # expense-*, shape, habita-*, etc), assumir o prefixo lia repo inexistente e
+  # devolvia body vazio → falso "ausente". Bug B4 (2026-06-18).
+  REPO_FULL=$(mmb_target_repo "$REPO_SHORT")
   PR_BODY=$(gh pr view "$PR_NUMBER" --repo "$MMB_GH_OWNER/$REPO_FULL" --json body -q .body 2>/dev/null || echo "")
   if [ -z "$PR_BODY" ]; then
     SUITE_STATUS="ausente"
@@ -137,7 +141,8 @@ fi
 
 # ── Monta body conforme schema v0.4+ ─────────────────────────────
 
-REPO_FULL="mmb-${REPO_SHORT}"
+# REPO_FULL vem do registry (id pode ou não ter prefixo mmb-).
+REPO_FULL=$(mmb_target_repo "$REPO_SHORT")
 PR_URL="https://github.com/${MMB_GH_OWNER}/${REPO_FULL}/pull/${PR_NUMBER}"
 
 # Body com campos obrigatórios na ordem do protocol.md
